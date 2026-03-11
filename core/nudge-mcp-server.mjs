@@ -241,6 +241,7 @@ async function handleNudgeNotify(args) {
       title,
       body,
       level,
+      ...(context && { context }),
       ...(sessionName && { sessionName }),
     },
     token,

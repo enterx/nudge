@@ -42,6 +42,9 @@ async function main() {
   const config = readConfig();
   if (!config) { process.stderr.write('Nudge activity: no config\n'); process.exit(0); }
 
+  // Terminal mode — skip activity notifications
+  if (config.askMode === 'terminal') { process.exit(0); }
+
   const token = await getValidToken(config);
   if (!token) { process.stderr.write('Nudge activity: no token\n'); process.exit(0); }
 

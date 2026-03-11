@@ -22,7 +22,7 @@ rm -rf "${DIST}"
 # Claude Code
 # ----------------------------------------------------------------
 CC_DIST="${DIST}/claude-code/plugins/nudge"
-mkdir -p "${CC_DIST}/scripts/lib" "${CC_DIST}/servers" "${CC_DIST}/hooks" "${CC_DIST}/commands"
+mkdir -p "${CC_DIST}/scripts/lib" "${CC_DIST}/servers" "${CC_DIST}/hooks" "${CC_DIST}/skills"
 mkdir -p "${DIST}/claude-code/.claude-plugin"
 
 # Marketplace wrapper

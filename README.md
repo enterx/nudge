@@ -65,9 +65,8 @@ Then in Claude Code:
 | `/nudge:pair` | Pair your phone. Generates a 6-digit code. |
 | `/nudge:test` | Send a test notification to verify push delivery. |
 | `/nudge:status` | Check connection status, token validity, and server health. |
-| `/nudge:mode` | Show or toggle ask mode. Usage: `/nudge:mode [nudge\|terminal]` |
-| `/nudge:afk` | Switch to mobile mode (shortcut for `/nudge:mode nudge`). |
-| `/nudge:desk` | Switch to terminal mode (shortcut for `/nudge:mode terminal`). |
+| `/nudge:afk` | Switch to mobile mode — questions go to your phone. |
+| `/nudge:desk` | Switch to terminal mode — questions stay in the terminal. |
 
 ## MCP tools
 
@@ -153,7 +152,7 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudg
 - **`nudge`** (default): Questions go to your phone via `nudge_ask_user`.
 - **`terminal`**: Questions stay in the terminal.
 
-Toggle with `/nudge:mode`, `/nudge:afk`, or `/nudge:desk`.
+Toggle with `/nudge:afk` or `/nudge:desk`.
 
 ## Repository structure
 

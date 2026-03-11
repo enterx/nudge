@@ -39,7 +39,7 @@ if [ -z "${NEW_MODE}" ]; then
     echo "  ○ terminal  — Questions stay in terminal"
   fi
   echo ""
-  echo "Usage: /nudge:mode nudge   or   /nudge:mode terminal"
+  echo "Usage: /nudge:afk (mobile)   or   /nudge:desk (terminal)"
   exit 0
 fi
 
@@ -55,7 +55,7 @@ case "${NEW_MODE}" in
       echo "Questions will now appear in the terminal."
     fi
     echo ""
-    echo "Note: This takes effect on the next session start (or /clear)."
+    echo "Mode switch takes effect immediately."
     ;;
   *)
     echo "❌ Invalid mode: ${NEW_MODE}"

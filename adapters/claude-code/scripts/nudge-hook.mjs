@@ -151,6 +151,11 @@ async function main() {
     process.exit(0);
   }
 
+  // Terminal mode — skip Nudge, fall back to built-in approval prompt
+  if (config.askMode === 'terminal') {
+    process.exit(0);
+  }
+
   const token = await getValidToken(config);
   if (!token) {
     process.exit(0);

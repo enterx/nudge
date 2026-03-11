@@ -14,7 +14,7 @@ double notifications:
 
 ### Ask Mode — Terminal vs Mobile
 
-The user can toggle how questions are delivered via `/nudge:mode`:
+The user can toggle how questions are delivered via `/nudge:afk` or `/nudge:desk`:
 
 - **`nudge` mode** (default): Use `nudge_ask_user` for questions. User is AFK.
 - **`terminal` mode**: Use standard `AskUserQuestion`. User is at the terminal.
