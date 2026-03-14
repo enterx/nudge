@@ -41,6 +41,19 @@ case "${REASON}" in
     BODY="Session ended." ;;
 esac
 
+# --- Cancel pending events for this session ---
+
+if [ -n "${SESSION_ID}" ]; then
+  if command -v jq &>/dev/null; then
+    CANCEL_PAYLOAD=$(jq -n --arg sid "${SESSION_ID}" '{ sessionId: $sid }')
+  else
+    CANCEL_PAYLOAD="{\"sessionId\":\"${SESSION_ID}\"}"
+  fi
+  CANCEL_RESULT=$(api_post "sessionEnd" "${CANCEL_PAYLOAD}" 2>/dev/null) || true
+  CANCELLED=$(json_extract_raw "${CANCEL_RESULT}" "cancelled" 2>/dev/null) || CANCELLED="0"
+  log_debug "Cancelled ${CANCELLED} pending event(s) for session ${SESSION_ID}"
+fi
+
 # --- Send notification ---
 
 if command -v jq &>/dev/null; then

@@ -7,10 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# --- Read hook input (not used but consumed from stdin) ---
-
-INPUT=$(cat)
-log_debug "SessionStart hook input received"
+# Consume stdin (hook protocol requires it)
+cat > /dev/null
 
 # --- Check if configured ---
 

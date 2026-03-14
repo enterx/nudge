@@ -5,9 +5,19 @@
  * Dependencies: Node.js built-ins only
  */
 
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+let dirEnsured = false;
+
+function ensureLogDir() {
+  if (dirEnsured) return;
+  dirEnsured = true; // Don't retry on failure
+  const dir = join(homedir(), '.nudge');
+  mkdirSync(dir, { recursive: true });
+  chmodSync(dir, 0o700);
+}
 
 /**
  * Create a named logger that writes to ~/.nudge/<name>.log
@@ -21,7 +31,10 @@ export function createLogger(name) {
   return {
     log(msg) {
       try {
-        appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+        ensureLogDir();
+        appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`, {
+          mode: 0o600,
+        });
       } catch {
         /* ignore — logging must never break the caller */
       }

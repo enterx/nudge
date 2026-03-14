@@ -9,7 +9,7 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PROVIDER } from './lib/constants.mjs';
@@ -28,8 +28,12 @@ function buildDescription(toolName, toolInput) {
   if (toolInput.command) {
     return `${toolName}: ${toolInput.command}`;
   }
-  if (toolInput.file_path) {
-    return `${toolName}: ${toolInput.file_path}`;
+  if (toolInput.file_path || toolInput.notebook_path) {
+    return `${toolName}: ${toolInput.file_path || toolInput.notebook_path}`;
+  }
+  if (toolInput.pattern) {
+    const path = toolInput.path ? ` in ${toolInput.path}` : '';
+    return `${toolName}: ${toolInput.pattern}${path}`;
   }
   if (toolInput.query) {
     return `${toolName}: ${toolInput.query}`;
@@ -39,6 +43,12 @@ function buildDescription(toolName, toolInput) {
   }
   if (toolInput.description) {
     return `${toolName}: ${toolInput.description}`;
+  }
+  // Generic fallback: show first meaningful string value from toolInput
+  for (const val of Object.values(toolInput)) {
+    if (typeof val === 'string' && val.length > 0) {
+      return `${toolName}: ${val.length > 120 ? val.slice(0, 120) + '...' : val}`;
+    }
   }
   return toolName;
 }
@@ -93,17 +103,9 @@ function exitWithOutput(output) {
 // --- Skip detection ---
 
 function shouldSkip(toolName, toolInput) {
-  if (toolName && toolName.includes('nudge')) {
-    return true;
-  }
-
+  if (toolName?.includes('nudge')) return true;
   const command = toolInput?.command || '';
-
-  if (/\bnudge-\w+\.(sh|mjs)\b/.test(command) || /\/nudge:/.test(command)) {
-    return true;
-  }
-
-  return false;
+  return /\bnudge-\w+\.(sh|mjs)\b/.test(command) || /\/nudge:/.test(command);
 }
 
 // --- Main ---
@@ -180,7 +182,29 @@ async function main() {
   };
 
   // POST event
-  const createResp = await apiPost(apiUrl, 'eventsCreate', payload, token);
+  let createResp;
+  try {
+    createResp = await apiPost(apiUrl, 'eventsCreate', payload, token);
+  } catch (err) {
+    if (err.status === 402) {
+      const code = err.body?.code;
+      if (code === 'FREE_LIMIT_REACHED') {
+        const limit = err.body?.limit ?? 30;
+        process.stderr.write(
+          `Nudge: Daily free limit reached (${limit} events/day). ` +
+          'Upgrade to Pro in the Nudge app for unlimited access. ' +
+          'Falling back to terminal prompt.\n',
+        );
+      } else {
+        process.stderr.write(
+          'Nudge: Subscription required. ' +
+          'Open the Nudge app to upgrade. Falling back to terminal prompt.\n',
+        );
+      }
+      process.exit(0);
+    }
+    throw err; // re-throw non-402 errors → caught by outer catch → exit(0)
+  }
 
   const eventId = createResp.eventId;
   const rtdbStreamUrl = createResp.rtdbStreamUrl;
@@ -201,15 +225,14 @@ async function main() {
   );
 
   // Cancel event on the backend when the hook is interrupted (Escape / SIGINT).
-  // FIX: signalHandled boolean guard prevents race condition where multiple
-  // signals could trigger concurrent cancel requests.
-  let responded = false;
-  let signalHandled = false;
+  // Single boolean guard prevents race conditions from multiple signals.
+  let cancelled = false;
 
-  const cancelEvent = () => {
-    if (responded) return;
-    responded = true;
-    return fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
+  const cancelAndExit = (signal) => {
+    if (cancelled) return;
+    cancelled = true;
+    hookLog(`signal: ${signal}, cancelling eventId=${eventId}`);
+    fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -217,30 +240,14 @@ async function main() {
       },
       body: JSON.stringify({ action: 'cancelled', reason: 'Escaped in terminal' }),
       signal: AbortSignal.timeout(5_000),
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
   };
 
-  const cancelAndExit = (signal) => {
-    if (signalHandled) return;
-    signalHandled = true;
-    hookLog(`signal received: ${signal}, eventId=${eventId}`);
-    const p = cancelEvent();
-    if (p) {
-      p.then(() => hookLog('cancel fetch completed')).finally(() => process.exit(0));
-      setTimeout(() => process.exit(0), 3000).unref();
-    } else {
-      hookLog('cancelEvent returned null (already responded)');
-      process.exit(0);
-    }
-  };
-
-  process.on('SIGINT', () => cancelAndExit('SIGINT'));
-  process.on('SIGTERM', () => cancelAndExit('SIGTERM'));
-  process.on('SIGHUP', () => cancelAndExit('SIGHUP'));
-  process.stdin.on('close', () => {
-    hookLog('stdin closed');
-    cancelAndExit('stdin-close');
-  });
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => cancelAndExit(sig));
+  }
+  process.stdin.on('close', () => cancelAndExit('stdin-close'));
 
   hookLog(`waiting for decision, eventId=${eventId}`);
 
@@ -248,7 +255,7 @@ async function main() {
   let decision;
   try {
     decision = await waitForDecision(rtdbStreamUrl, token);
-    responded = true;
+    cancelled = true; // Prevent cancel on normal completion
   } catch {
     cancelAndExit('sse-error');
     return;
@@ -261,44 +268,28 @@ async function main() {
       isAlways ? 'Nudge: Approved (always allow)\n' : 'Nudge: Approved\n',
     );
 
-    // For "always allow", attempt to add a permission rule to Claude Code settings
+    // For "always allow", add a permission rule to Claude Code settings
     if (isAlways) {
       try {
-        const settingsPath = join(
-          cwd || process.cwd(),
-          '.claude',
-          'settings.local.json',
-        );
-        let settings = {};
-        try {
-          const raw = readFileSync(settingsPath, 'utf-8');
-          const stripped = raw.replace(/^\s*\/\/.*$/gm, '');
-          settings = JSON.parse(stripped);
-        } catch {
-          // File doesn't exist or parse failed — start fresh
-        }
-        if (!settings.permissions) settings.permissions = {};
-        if (!Array.isArray(settings.permissions.allow)) settings.permissions.allow = [];
+        const settingsPath = join(cwd || process.cwd(), '.claude', 'settings.local.json');
+        let settings;
+        try { settings = JSON.parse(readFileSync(settingsPath, 'utf-8').replace(/^\s*\/\/.*$/gm, '')); }
+        catch { settings = {}; }
 
-        let rule = toolName;
-        if (toolName === 'Bash' && toolInput?.command) {
-          const baseCmd = toolInput.command.trim().split(/\s+/)[0];
-          rule = `Bash(${baseCmd}:*)`;
-        }
+        settings.permissions ??= {};
+        settings.permissions.allow ??= [];
+
+        const rule = toolName === 'Bash' && toolInput?.command
+          ? `Bash(${toolInput.command.trim().split(/\s+/)[0]}:*)`
+          : toolName;
 
         if (!settings.permissions.allow.includes(rule)) {
           settings.permissions.allow.push(rule);
-          writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', {
-            mode: 0o600,
-          });
-          process.stderr.write(
-            `Nudge: Added "${rule}" to .claude/settings.local.json\n`,
-          );
+          writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
+          process.stderr.write(`Nudge: Added "${rule}" to .claude/settings.local.json\n`);
         }
       } catch {
-        process.stderr.write(
-          'Nudge: Could not save "always allow" rule to settings.\n',
-        );
+        process.stderr.write('Nudge: Could not save "always allow" rule to settings.\n');
       }
     }
 

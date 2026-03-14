@@ -70,6 +70,54 @@ level: "success"
 Do NOT use `nudge_notify` when you need a response — use `nudge_ask_user` or
 `nudge_approve` instead.
 
+### After Every Task — Always Ask What's Next
+
+**Never proactively start the next task.** The user is AFK and controls the pace.
+
+After completing a task:
+1. Send `nudge_notify` with the result summary
+2. Then call `nudge_ask_user` to ask what to do next
+
+Example flow:
+```
+→ nudge_notify(title: "Auth Fix Complete", body: "...", level: "success")
+→ nudge_ask_user(question: "What would you like to do next?", options: [...])
+```
+
+Do NOT assume the next step. Do NOT chain tasks without asking. Always wait
+for the user's response before proceeding.
+
+### Never Stop the Conversation (TOP PRIORITY)
+
+**Never stop (end the conversation) after completing a task.**
+The user is away from the terminal. If you stop, no notification is delivered
+and your work goes unnoticed.
+
+Required flow after every task completion:
+1. Send a result summary via `nudge_notify`
+2. **Immediately call `nudge_ask_user`** to ask what to do next (e.g., "Anything else you'd like me to work on?")
+3. Wait for the user's response (they will receive a push notification even while AFK — just wait)
+4. Only stop when the user **explicitly** says they're done (e.g., "nothing", "that's all", "done")
+
+**Call `nudge_ask_user` instead of stopping. No exceptions.**
+
+### Security — Never Send Secrets
+
+Nudge delivers content to a mobile device over push notifications.
+**Never include secrets or credentials** in any Nudge tool parameter:
+
+- API keys, tokens, passwords, private keys
+- `.env` file contents or environment variable values
+- Connection strings, database URLs with credentials
+- Auth headers (`Bearer ...`, `Basic ...`)
+
+This applies to `description`, `body`, `context`, `toolInput`, and all other
+fields. If you need to reference a secret, describe it generically
+(e.g., "the Firebase API key" instead of the actual value).
+
+The hook automatically redacts common credential patterns in `toolInput`,
+but Claude must **never intentionally include secrets** in MCP tool calls.
+
 ### Required Parameters
 
 **Always include the `context` parameter** when calling `nudge_ask_user`,

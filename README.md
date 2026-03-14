@@ -40,7 +40,7 @@ Nudge sends permission requests and questions from your AI coding tool to your p
 ## Installation
 
 ```bash
-git clone https://github.com/user/nudge-plugin.git
+git clone https://github.com/anthropics/nudge-plugin.git
 cd nudge-plugin && bash build.sh
 ```
 
@@ -134,7 +134,7 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudg
   "refreshToken": "<firebase-refresh-token>",
   "apiKey": "<firebase-web-api-key>",
   "userId": "<firebase-uid>",
-  "apiUrl": "https://us-central1-enterx-nudge-dev.cloudfunctions.net",
+  "apiUrl": "https://your-nudge-api.cloudfunctions.net",
   "pairingCode": "ABC-DEF",
   "askMode": "nudge"
 }
@@ -169,7 +169,7 @@ nudge-plugin/
 │       ├── hooks/hooks.json    # Hook registration
 │       ├── .mcp.json           # MCP server registration
 │       ├── CLAUDE.md           # Context instructions
-│       ├── commands/*.md       # Slash commands
+│       ├── skills/             # Skill definitions
 │       └── scripts/            # Hook scripts (hook, activity, session)
 ├── build.sh                    # Assembles dist/ from core + adapters
 └── dist/
@@ -208,9 +208,44 @@ The Nudge backend (Cloud Functions + Firebase) is not included in this repositor
 
 SSE streaming uses Firebase Realtime Database REST API for real-time response delivery.
 
+## Privacy & data handling
+
+When you approve or deny an action, the following data is sent to the Nudge server:
+
+- **Tool name and input** (e.g., `Bash: npm test`) -- so you can see what you're approving on your phone
+- **Context and session name** -- if provided by the AI tool
+- **Your response** (approve/deny/selected options)
+
+### How data is stored
+
+| Data | Storage | Retention |
+|------|---------|-----------|
+| Event details (tool name, input, description) | Firebase RTDB | Deleted 1 hour after response, or 24 hours if unanswered |
+| Your response (approve/deny) | Firebase RTDB | Same as above |
+| Device token (for push notifications) | Firestore | Until you unpair or delete your account |
+
+- A scheduled cleanup function runs every 24 hours to delete expired events.
+- Deleting your account removes **all** stored data (events, device tokens, pairing records).
+- Credentials in tool inputs (API keys, tokens, passwords) are **redacted before sending** -- the server never receives them.
+- All communication uses HTTPS. Auth tokens are short-lived JWTs with automatic refresh.
+
+### What is NOT stored
+
+- Your source code or file contents (only file paths are sent for Write/Edit actions)
+- Conversation history or full prompts
+- Environment variables or `.env` file contents
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting instructions.
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or sponsored by Anthropic, Google, or Firebase. "Claude Code" is a trademark of Anthropic. "Firebase" is a trademark of Google. All trademarks belong to their respective owners.
 
 ## License
 

@@ -33,23 +33,17 @@ async function main() {
 
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
-  const sessionId = hookData.session_id || 'unknown';
-  const cwd = hookData.cwd;
   const transcriptPath = hookData.transcript_path;
 
-  if (!toolName) { process.stderr.write('Nudge activity: no tool_name\n'); process.exit(0); }
+  if (!toolName) process.exit(0);
 
   const config = readConfig();
-  if (!config) { process.stderr.write('Nudge activity: no config\n'); process.exit(0); }
-
-  // Terminal mode — skip activity notifications
-  if (config.askMode === 'terminal') { process.exit(0); }
+  if (!config || config.askMode === 'terminal') process.exit(0);
 
   const token = await getValidToken(config);
-  if (!token) { process.stderr.write('Nudge activity: no token\n'); process.exit(0); }
+  if (!token) process.exit(0);
 
   const apiUrl = getApiUrl(config);
-  process.stderr.write(`Nudge activity: sending ${toolName} to ${apiUrl}\n`);
 
   // Build a human-readable description per tool type
   let description = toolName;
@@ -76,20 +70,15 @@ async function main() {
   };
 
   // Fire-and-forget POST — push-only, no RTDB event
-  try {
-    const resp = await fetch(`${apiUrl}/pushNotifyFn`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10_000),
-    });
-    process.stderr.write(`Nudge activity: HTTP ${resp.status}\n`);
-  } catch (err) {
-    process.stderr.write(`Nudge activity: fetch error — ${err.message}\n`);
-  }
+  await fetch(`${apiUrl}/pushNotifyFn`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {});
 }
 
 main().catch(() => process.exit(0));

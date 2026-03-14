@@ -16,7 +16,7 @@ export const NUDGE_CONFIG_DIR =
 export const CONFIG_PATH =
   process.env.NUDGE_CONFIG_PATH || join(NUDGE_CONFIG_DIR, 'config');
 
-export const LAST_NOTIFY_PATH = join(homedir(), '.nudge', 'last_notify');
+export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
 // --- API ---
 

@@ -12,11 +12,8 @@ echo ""
 
 # If already paired, reset config for a fresh pairing
 if config_exists; then
-  EXISTING_TOKEN=$(get_token)
-  if [ -n "${EXISTING_TOKEN}" ]; then
-    rm -f "${NUDGE_CONFIG_FILE}"
-    rm -f "${NUDGE_LOG_FILE}"
-  fi
+  rm -f "${NUDGE_CONFIG_FILE}"
+  rm -f "${NUDGE_LOG_FILE}"
 fi
 
 # --- Generate pairing code ---

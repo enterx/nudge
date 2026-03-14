@@ -9,9 +9,7 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 import {
@@ -31,23 +29,50 @@ const { log: debugLog } = createLogger('mcp-debug');
 
 const SESSION_ID = `claude-code-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+// --- Input validation ---
+
+const MAX_STRING_LENGTH = 4000;
+
+function validateStringLength(value, name) {
+  if (typeof value === 'string' && value.length > MAX_STRING_LENGTH) {
+    throw new Error(`${name} exceeds maximum length of ${MAX_STRING_LENGTH} characters`);
+  }
+}
+
+// --- Auth helper ---
+
+async function getAuthContext() {
+  const config = readConfig();
+  if (!config) throw new Error('Nudge not configured. User must pair their device first.');
+  const token = await getValidToken(config);
+  if (!token) throw new Error('No authentication token. User must re-pair their device.');
+  return { config, token, apiUrl: getApiUrl(config) };
+}
+
 // --- In-flight request tracking (for cancellation) ---
 
 const inFlightRequests = new Map();
 
 async function cancelEventOnBackend(apiUrl, eventId, token) {
+  await fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled in terminal' }),
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => {}); // Best-effort
+}
+
+async function waitWithTracking(rtdbStreamUrl, token, apiUrl, eventId, requestId) {
+  if (requestId) {
+    inFlightRequests.set(requestId, { eventId, apiUrl, token });
+  }
   try {
-    await fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled in terminal' }),
-      signal: AbortSignal.timeout(5_000),
-    });
-  } catch {
-    // Best-effort
+    return await waitForDecision(rtdbStreamUrl, token);
+  } finally {
+    if (requestId) inFlightRequests.delete(requestId);
   }
 }
 
@@ -59,6 +84,9 @@ async function handleNudgeAskUser(args, requestId) {
   if (!question || typeof question !== 'string') {
     throw new Error('question is required and must be a string');
   }
+  validateStringLength(question, 'question');
+  validateStringLength(context, 'context');
+  validateStringLength(sessionName, 'sessionName');
   if (!Array.isArray(options) || options.length < 2 || options.length > 4) {
     throw new Error('options must be an array of 2-4 items');
   }
@@ -68,17 +96,7 @@ async function handleNudgeAskUser(args, requestId) {
     }
   }
 
-  const config = readConfig();
-  if (!config) {
-    throw new Error('Nudge not configured. User must pair their device first.');
-  }
-
-  const token = await getValidToken(config);
-  if (!token) {
-    throw new Error('No authentication token. User must re-pair their device.');
-  }
-
-  const apiUrl = getApiUrl(config);
+  const { token, apiUrl } = await getAuthContext();
 
   const createResp = await apiPost(
     apiUrl,
@@ -110,17 +128,7 @@ async function handleNudgeAskUser(args, requestId) {
     );
   }
 
-  if (requestId) {
-    debugLog(`ask_user: tracking requestId=${requestId} eventId=${eventId}`);
-    inFlightRequests.set(requestId, { eventId, apiUrl, token });
-  }
-
-  let decision;
-  try {
-    decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-  } finally {
-    if (requestId) inFlightRequests.delete(requestId);
-  }
+  const decision = await waitWithTracking(createResp.rtdbStreamUrl, token, apiUrl, eventId, requestId);
 
   const result = {
     selectedOptions: decision.selectedOptions || [],
@@ -140,18 +148,11 @@ async function handleNudgeApprove(args, requestId) {
   if (!description || typeof description !== 'string') {
     throw new Error('description is required and must be a string');
   }
+  validateStringLength(description, 'description');
+  validateStringLength(context, 'context');
+  validateStringLength(sessionName, 'sessionName');
 
-  const config = readConfig();
-  if (!config) {
-    throw new Error('Nudge not configured. User must pair their device first.');
-  }
-
-  const token = await getValidToken(config);
-  if (!token) {
-    throw new Error('No authentication token. User must re-pair their device.');
-  }
-
-  const apiUrl = getApiUrl(config);
+  const { token, apiUrl } = await getAuthContext();
 
   const createResp = await apiPost(
     apiUrl,
@@ -182,17 +183,7 @@ async function handleNudgeApprove(args, requestId) {
     );
   }
 
-  if (requestId) {
-    debugLog(`approve: tracking requestId=${requestId} eventId=${eventId}`);
-    inFlightRequests.set(requestId, { eventId, apiUrl, token });
-  }
-
-  let decision;
-  try {
-    decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-  } finally {
-    if (requestId) inFlightRequests.delete(requestId);
-  }
+  const decision = await waitWithTracking(createResp.rtdbStreamUrl, token, apiUrl, eventId, requestId);
 
   const approved = decision.action === 'approved';
   const result = {
@@ -216,23 +207,17 @@ async function handleNudgeNotify(args) {
   if (!body || typeof body !== 'string') {
     throw new Error('body is required and must be a string');
   }
+  validateStringLength(title, 'title');
+  validateStringLength(body, 'body');
+  validateStringLength(context, 'context');
+  validateStringLength(sessionName, 'sessionName');
 
   const validLevels = ['info', 'success', 'warning', 'error'];
   if (!validLevels.includes(level)) {
     throw new Error(`level must be one of: ${validLevels.join(', ')}`);
   }
 
-  const config = readConfig();
-  if (!config) {
-    throw new Error('Nudge not configured. User must pair their device first.');
-  }
-
-  const token = await getValidToken(config);
-  if (!token) {
-    throw new Error('No authentication token. User must re-pair their device.');
-  }
-
-  const apiUrl = getApiUrl(config);
+  const { token, apiUrl } = await getAuthContext();
 
   await apiPost(
     apiUrl,
@@ -241,6 +226,7 @@ async function handleNudgeNotify(args) {
       title,
       body,
       level,
+      sessionId: SESSION_ID,
       ...(context && { context }),
       ...(sessionName && { sessionName }),
     },
@@ -248,12 +234,7 @@ async function handleNudgeNotify(args) {
   );
 
   // Write timestamp so idle_prompt hook can skip redundant notifications
-  try {
-    mkdirSync(join(homedir(), '.nudge'), { recursive: true });
-    writeFileSync(LAST_NOTIFY_PATH, String(Date.now()), { mode: 0o600 });
-  } catch {
-    // Non-fatal
-  }
+  writeFileSync(LAST_NOTIFY_PATH, String(Date.now()), { mode: 0o600 });
 
   return {
     content: [{ type: 'text', text: JSON.stringify({ sent: true }) }],
@@ -435,34 +416,48 @@ function handleToolsList(id) {
   };
 }
 
+const TOOL_HANDLERS = {
+  nudge_ask_user: handleNudgeAskUser,
+  nudge_approve: handleNudgeApprove,
+  nudge_notify: handleNudgeNotify,
+};
+
 async function handleToolsCall(id, params) {
   const name = params?.name;
-  const args = params?.arguments || {};
+  const handler = TOOL_HANDLERS[name];
 
-  let handler;
-  if (name === 'nudge_ask_user') {
-    handler = handleNudgeAskUser;
-  } else if (name === 'nudge_approve') {
-    handler = handleNudgeApprove;
-  } else if (name === 'nudge_notify') {
-    handler = handleNudgeNotify;
-  } else {
+  if (!handler) {
     return {
       jsonrpc: '2.0',
       id,
       result: {
-        content: [
-          { type: 'text', text: `Unknown tool: ${name}` },
-        ],
+        content: [{ type: 'text', text: `Unknown tool: ${name}` }],
         isError: true,
       },
     };
   }
 
   try {
-    const result = await handler(args, id);
+    const result = await handler(params?.arguments || {}, id);
     return { jsonrpc: '2.0', id, result };
   } catch (err) {
+    let message = `Nudge error: ${err.message}. Fall back to AskUserQuestion.`;
+
+    if (err.status === 402) {
+      const code = err.body?.code;
+      if (code === 'FREE_LIMIT_REACHED') {
+        const limit = err.body?.limit ?? 30;
+        message =
+          `Nudge: Daily free limit reached (${limit} events/day). ` +
+          'The user can upgrade to Pro in the Nudge app for unlimited access. ' +
+          'Fall back to AskUserQuestion for this interaction.';
+      } else {
+        message =
+          'Nudge: Subscription required. The user can upgrade in the Nudge app. ' +
+          'Fall back to AskUserQuestion for this interaction.';
+      }
+    }
+
     return {
       jsonrpc: '2.0',
       id,
@@ -470,7 +465,7 @@ async function handleToolsCall(id, params) {
         content: [
           {
             type: 'text',
-            text: `Nudge error: ${err.message}. Fall back to AskUserQuestion.`,
+            text: message,
           },
         ],
         isError: true,
@@ -485,18 +480,12 @@ async function handleMessage(msg) {
   debugLog(`incoming: ${JSON.stringify(msg)}`);
 
   // Handle notifications (no id) — specifically cancellation
-  if (msg.id === undefined || msg.id === null) {
-    debugLog(`notification received: method=${msg.method}`);
+  if (msg.id == null) {
     if (msg.method === 'notifications/cancelled') {
-      const requestId = msg.params?.requestId;
-      debugLog(`cancel requestId=${requestId}, inFlight keys=[${[...inFlightRequests.keys()]}]`);
-      const inflight = requestId ? inFlightRequests.get(requestId) : null;
+      const inflight = msg.params?.requestId && inFlightRequests.get(msg.params.requestId);
       if (inflight) {
-        inFlightRequests.delete(requestId);
-        debugLog(`cancelling event ${inflight.eventId} on backend`);
+        inFlightRequests.delete(msg.params.requestId);
         cancelEventOnBackend(inflight.apiUrl, inflight.eventId, inflight.token);
-      } else {
-        debugLog(`no matching in-flight request found`);
       }
     }
     return null;
@@ -556,5 +545,11 @@ rl.on('close', () => {
 
 // Prevent unhandled rejection from crashing the server
 process.on('unhandledRejection', (err) => {
-  process.stderr.write(`[nudge-mcp] unhandled rejection: ${err}\n`);
+  const msg = err instanceof Error ? err.message : 'unknown error';
+  // Redact tokens/credentials that may appear in error messages
+  const safe = msg
+    .replace(/auth=[^&\s]+/gi, 'auth=[REDACTED]')
+    .replace(/(Bearer\s+)[A-Za-z0-9\-._~+/]+=*/gi, '$1[REDACTED]')
+    .replace(/(eyJ)[A-Za-z0-9_\-.]{10,}/g, '[TOKEN_REDACTED]');
+  process.stderr.write(`[nudge-mcp] unhandled rejection: ${safe}\n`);
 });

@@ -1,5 +1,29 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Runtime config (contains tokens)
 .nudge/
+
+# Build output
+dist/
+
+# Debug logs
+*.log

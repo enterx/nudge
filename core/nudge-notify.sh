@@ -84,15 +84,20 @@ fi
 
 # --- Send notification ---
 API_URL=$(get_api_url)
-BODY=$(cat <<EOF
-{
-  "type": "${NOTIFICATION_TYPE}",
-  "title": "${TITLE}",
-  "message": "${MESSAGE}",
-  "sessionId": "${SESSION_ID}"
-}
-EOF
-)
+
+if command -v jq &>/dev/null; then
+  BODY=$(jq -n \
+    --arg type "${NOTIFICATION_TYPE}" \
+    --arg title "${TITLE}" \
+    --arg message "${MESSAGE}" \
+    --arg sessionId "${SESSION_ID}" \
+    '{type: $type, title: $title, message: $message, sessionId: $sessionId}')
+else
+  # Fallback: escape double quotes in values
+  SAFE_TITLE=$(printf '%s' "${TITLE}" | sed 's/"/\\"/g')
+  SAFE_MESSAGE=$(printf '%s' "${MESSAGE}" | sed 's/"/\\"/g')
+  BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"${SAFE_MESSAGE}\",\"sessionId\":\"${SESSION_ID}\"}"
+fi
 
 log_debug "Sending notification to API..."
 api_post "notify" "${BODY}" "${TOKEN}" >/dev/null 2>&1 || true

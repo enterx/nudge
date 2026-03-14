@@ -21,7 +21,7 @@ Thank you for your interest in contributing. This document covers the setup, con
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/user/nudge-plugin.git
+git clone https://github.com/anthropics/nudge-plugin.git
 cd nudge-plugin
 ```
 
@@ -44,10 +44,10 @@ echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node scripts/nudge-h
 
 | Directory | Purpose |
 |-----------|---------|
-| `scripts/` | Bash and Node.js scripts executed by hooks and slash commands |
+| `scripts/` | Bash and Node.js scripts executed by hooks and skills |
 | `scripts/lib.sh` | Shared bash utilities: config I/O, HTTP helpers, JSON extraction, logging |
 | `servers/` | MCP server (`nudge-mcp-server.mjs`) |
-| `commands/` | Slash command definitions (`.md` files) |
+| `skills/` | Skill definitions (`.md` files in subdirectories) |
 | `hooks/` | Hook registration (`hooks.json`) |
 
 ### Key files
@@ -111,10 +111,10 @@ Network-dependent tests (hooks that call the API) are not included. Use `/nudge:
 4. Update `CLAUDE.md` to document when Claude should use the new tool.
 5. Add tests to `servers/nudge-mcp-server.test.mjs`.
 
-## Adding a new slash command
+## Adding a new skill
 
-1. Create a `.md` file in `commands/`.
-2. Front matter: `name` (the command suffix) and `description`.
+1. Create a subdirectory in `skills/` (e.g., `skills/my-skill/`).
+2. Add a `SKILL.md` file with front matter: `name` (the skill suffix) and `description`.
 3. Body: instructions for Claude Code on what to do (run a script, call an MCP tool, etc.).
 
 ## Commit conventions
