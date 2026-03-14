@@ -14,9 +14,11 @@ FAILED=0
 declare -a ERRORS=()
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Scripts live in ../scripts/ (dist layout) or same dir (legacy flat layout)
+# Scripts live in ../scripts/ (dist layout) or parent dir (source layout)
 if [ -d "${SCRIPT_DIR}/../scripts" ]; then
   SCRIPTS_DIR="${SCRIPT_DIR}/../scripts"
+elif [ -f "${SCRIPT_DIR}/../lib.sh" ]; then
+  SCRIPTS_DIR="${SCRIPT_DIR}/.."
 else
   SCRIPTS_DIR="${SCRIPT_DIR}"
 fi
@@ -340,14 +342,10 @@ HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" nudge >/dev/null 2>&1
 result=$(run_lib 'config_read "askMode"')
 expect_eq "sets askMode to nudge" "nudge" "${result}"
 
-# Invalid mode → exit non-zero
+# Invalid mode → graceful exit (exit 0 to trigger Claude Code terminal fallback)
 HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" invalid_mode >/dev/null 2>&1
 exit_code=$?
-if [ "${exit_code}" -ne 0 ]; then
-  assert_pass "exits non-zero for invalid mode"
-else
-  assert_fail "exits non-zero for invalid mode" "Expected non-zero, got 0"
-fi
+expect_exit "graceful exit for invalid mode" "0" "${exit_code}"
 
 # ============================================================
 # nudge-notify.sh

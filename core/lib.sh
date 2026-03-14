@@ -50,6 +50,62 @@ log_to_file() {
   echo "${timestamp} $(_redact "$*")" >> "${NUDGE_LOG_FILE}" 2>/dev/null || true
 }
 
+# --- Internal Helpers ---
+
+_has_jq() {
+  command -v jq &>/dev/null
+}
+
+_ensure_config_dir() {
+  mkdir -p "${NUDGE_CONFIG_DIR}"
+  chmod 700 "${NUDGE_CONFIG_DIR}" 2>/dev/null || true
+}
+
+# Escape a string for safe embedding in JSON (handles backslashes, quotes, tabs, newlines)
+_safe_json_string() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g' | tr '\n' ' '
+}
+
+_parse_http_response() {
+  local response="$1"
+  HTTP_CODE=$(echo "${response}" | tail -1)
+  HTTP_BODY=$(echo "${response}" | sed '$d')
+}
+
+_is_http_success() {
+  local code="$1"
+  [ "${code}" -ge 200 ] 2>/dev/null && [ "${code}" -lt 300 ] 2>/dev/null
+}
+
+# Check if a cooldown period is still active
+# Usage: _check_cooldown "/path/to/timestamp_file" cooldown_ms
+# Returns 0 (true) if cooldown is active, 1 (false) if expired
+_check_cooldown() {
+  local file="$1"
+  local cooldown_ms="$2"
+  if [ -f "${file}" ]; then
+    local last_ts
+    last_ts=$(cat "${file}" 2>/dev/null) || last_ts=0
+    # Validate that timestamp is numeric
+    if ! echo "${last_ts}" | grep -qE '^[0-9]+$'; then
+      last_ts=0
+    fi
+    local now_ms=$(( $(date +%s) * 1000 ))
+    local elapsed=$(( now_ms - last_ts ))
+    if [ "${elapsed}" -lt "${cooldown_ms}" ] 2>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Read askMode from config with default fallback
+_get_ask_mode() {
+  local mode
+  mode=$(config_read "askMode" 2>/dev/null) || true
+  echo "${mode:-nudge}"
+}
+
 # --- Config I/O ---
 
 config_exists() {
@@ -62,7 +118,7 @@ config_read() {
     return 1
   fi
 
-  if command -v jq &>/dev/null; then
+  if _has_jq; then
     jq -r ".${key} // empty" "${NUDGE_CONFIG_FILE}" 2>/dev/null
   else
     # Fallback: grep-based JSON parsing (simple key-value only)
@@ -75,10 +131,9 @@ config_write() {
   local key="$1"
   local value="$2"
 
-  mkdir -p "${NUDGE_CONFIG_DIR}"
-  chmod 700 "${NUDGE_CONFIG_DIR}" 2>/dev/null || true
+  _ensure_config_dir
 
-  if config_exists && command -v jq &>/dev/null; then
+  if config_exists && _has_jq; then
     local tmp
     tmp=$(mktemp) || { log_error "mktemp failed"; return 1; }
     if jq --arg k "${key}" --arg v "${value}" '.[$k] = $v' "${NUDGE_CONFIG_FILE}" > "${tmp}" 2>/dev/null; then
@@ -109,7 +164,9 @@ config_write() {
           if [ ${first} -eq 0 ]; then
             echo "," >> "${tmp}"
           fi
-          printf '  "%s": "%s"' "${existing_key}" "${existing_val}" >> "${tmp}"
+          local safe_val
+          safe_val=$(_safe_json_string "${existing_val}")
+          printf '  "%s": "%s"' "${existing_key}" "${safe_val}" >> "${tmp}"
           first=0
         fi
       fi
@@ -118,14 +175,18 @@ config_write() {
     if [ ${first} -eq 0 ]; then
       echo "," >> "${tmp}"
     fi
-    printf '  "%s": "%s"\n' "${key}" "${value}" >> "${tmp}"
+    local safe_value
+    safe_value=$(_safe_json_string "${value}")
+    printf '  "%s": "%s"\n' "${key}" "${safe_value}" >> "${tmp}"
     echo '}' >> "${tmp}"
     mv "${tmp}" "${NUDGE_CONFIG_FILE}"
   else
     # Create new config
+    local safe_value
+    safe_value=$(_safe_json_string "${value}")
     cat > "${NUDGE_CONFIG_FILE}" << EOF
 {
-  "${key}": "${value}"
+  "${key}": "${safe_value}"
 }
 EOF
   fi
@@ -135,8 +196,7 @@ EOF
 
 config_write_json() {
   local json="$1"
-  mkdir -p "${NUDGE_CONFIG_DIR}"
-  chmod 700 "${NUDGE_CONFIG_DIR}" 2>/dev/null || true
+  _ensure_config_dir
   echo "${json}" > "${NUDGE_CONFIG_FILE}"
   chmod 600 "${NUDGE_CONFIG_FILE}"
 }
@@ -195,17 +255,22 @@ is_token_expired() {
   fi
 
   local exp
-  if command -v jq &>/dev/null; then
+  if _has_jq; then
     exp=$(echo "${payload}" | base64 -d 2>/dev/null | jq -r '.exp // 0' 2>/dev/null) || exp=0
   else
     exp=$(echo "${payload}" | base64 -d 2>/dev/null | grep -o '"exp":[0-9]*' | head -1 | sed 's/"exp"://') || exp=0
+  fi
+
+  # Validate that exp is numeric
+  if ! echo "${exp}" | grep -qE '^[0-9]+$'; then
+    return 0  # Can't parse exp, assume expired
   fi
 
   local now
   now=$(date +%s)
 
   # Expired if less than 5 minutes remaining
-  [ "${exp:-0}" -lt $((now + 300)) ]
+  [ "${exp}" -lt $((now + 300)) ]
 }
 
 # Refresh the ID token using the stored refresh token
@@ -252,7 +317,7 @@ json_extract() {
   local json="$1"
   local key="$2"
 
-  if command -v jq &>/dev/null; then
+  if _has_jq; then
     echo "${json}" | jq -r ".${key} // empty" 2>/dev/null
   else
     echo "${json}" | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" 2>/dev/null \
@@ -265,7 +330,7 @@ json_extract_raw() {
   local json="$1"
   local key="$2"
 
-  if command -v jq &>/dev/null; then
+  if _has_jq; then
     echo "${json}" | jq -r ".${key}" 2>/dev/null
   else
     # For non-string values (numbers, booleans)
@@ -284,11 +349,6 @@ api_post() {
   local token="${3:-$(get_token)}"
   local api_url
   api_url=$(get_api_url)
-
-  local auth_header=""
-  if [ -n "${token}" ]; then
-    auth_header="-H \"Authorization: Bearer ${token}\""
-  fi
 
   local attempt=0
   local delay=${RETRY_DELAY_BASE}
@@ -309,18 +369,15 @@ api_post() {
     fi
 
     if [ -n "${response}" ]; then
-      local http_code
-      http_code=$(echo "${response}" | tail -1)
-      local body
-      body=$(echo "${response}" | sed '$d')
+      _parse_http_response "${response}"
 
-      if [ "${http_code}" -ge 200 ] && [ "${http_code}" -lt 300 ] 2>/dev/null; then
-        echo "${body}"
+      if _is_http_success "${HTTP_CODE}"; then
+        echo "${HTTP_BODY}"
         return 0
-      elif [ "${http_code}" = "429" ]; then
+      elif [ "${HTTP_CODE}" = "429" ]; then
         log_debug "Rate limited, retrying in ${delay}s..."
       else
-        log_debug "HTTP ${http_code}: ${body}"
+        log_debug "HTTP ${HTTP_CODE}: ${HTTP_BODY}"
       fi
     fi
 
@@ -351,13 +408,10 @@ api_get() {
   fi
 
   if [ -n "${response}" ]; then
-    local http_code
-    http_code=$(echo "${response}" | tail -1)
-    local body
-    body=$(echo "${response}" | sed '$d')
+    _parse_http_response "${response}"
 
-    if [ "${http_code}" -ge 200 ] && [ "${http_code}" -lt 300 ] 2>/dev/null; then
-      echo "${body}"
+    if _is_http_success "${HTTP_CODE}"; then
+      echo "${HTTP_BODY}"
       return 0
     fi
   fi

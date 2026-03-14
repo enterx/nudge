@@ -44,7 +44,7 @@ esac
 # --- Cancel pending events for this session ---
 
 if [ -n "${SESSION_ID}" ]; then
-  if command -v jq &>/dev/null; then
+  if _has_jq; then
     CANCEL_PAYLOAD=$(jq -n --arg sid "${SESSION_ID}" '{ sessionId: $sid }')
   else
     CANCEL_PAYLOAD="{\"sessionId\":\"${SESSION_ID}\"}"
@@ -56,7 +56,7 @@ fi
 
 # --- Send notification ---
 
-if command -v jq &>/dev/null; then
+if _has_jq; then
   EVENT_PAYLOAD=$(jq -n \
     --arg body "${BODY}" \
     '{
@@ -65,7 +65,7 @@ if command -v jq &>/dev/null; then
       level: "info"
     }')
 else
-  SAFE_BODY=$(printf '%s' "${BODY}" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g' | tr '\n' ' ')
+  SAFE_BODY=$(_safe_json_string "${BODY}")
   EVENT_PAYLOAD="{\"title\":\"Session ended\",\"body\":\"${SAFE_BODY}\",\"level\":\"info\"}"
 fi
 

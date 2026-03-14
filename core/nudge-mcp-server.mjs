@@ -18,12 +18,12 @@ import {
   SERVER_NAME,
   SERVER_VERSION,
   PROTOCOL_VERSION,
-} from '../scripts/lib/constants.mjs';
-import { createLogger } from '../scripts/lib/logger.mjs';
-import { readConfig, getApiUrl } from '../scripts/lib/config.mjs';
-import { getValidToken } from '../scripts/lib/token-utils.mjs';
-import { apiPost } from '../scripts/lib/api.mjs';
-import { waitForDecision } from '../scripts/lib/sse.mjs';
+} from './lib/constants.mjs';
+import { createLogger } from './lib/logger.mjs';
+import { readConfig, getApiUrl } from './lib/config.mjs';
+import { getValidToken } from './lib/token-utils.mjs';
+import { apiPost } from './lib/api.mjs';
+import { waitForDecision } from './lib/sse.mjs';
 
 const { log: debugLog } = createLogger('mcp-debug');
 

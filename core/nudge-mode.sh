@@ -16,8 +16,7 @@ fi
 
 # --- Read current mode ---
 
-CURRENT_MODE=$(config_read "askMode" 2>/dev/null) || true
-CURRENT_MODE="${CURRENT_MODE:-nudge}"
+CURRENT_MODE=$(_get_ask_mode)
 
 # --- Handle arguments ---
 
@@ -58,9 +57,9 @@ case "${NEW_MODE}" in
     echo "Mode switch takes effect immediately."
     ;;
   *)
-    echo "❌ Invalid mode: ${NEW_MODE}"
+    echo "Invalid mode: ${NEW_MODE}"
     echo "Valid modes: nudge, terminal"
-    exit 1
+    graceful_exit "Invalid mode: ${NEW_MODE}"
     ;;
 esac
 

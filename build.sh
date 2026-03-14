@@ -67,11 +67,20 @@ for f in "${CORE}/"*.sh; do
   cp "$f" "${CC_DIST}/scripts/${base}"
 done
 
-# Copy MCP server
-cp "${CORE}/nudge-mcp-server.mjs" "${CC_DIST}/servers/nudge-mcp-server.mjs"
+# Copy MCP server (rewrite import paths for dist layout: ./lib/ → ../scripts/lib/)
+sed 's|from '\''./lib/|from '\''../scripts/lib/|g' \
+  "${CORE}/nudge-mcp-server.mjs" > "${CC_DIST}/servers/nudge-mcp-server.mjs"
 
-# Copy tests
+# Copy tests (rewrite import paths for dist layout: ../lib/ → ../scripts/lib/, ../nudge-mcp-server.mjs → ../servers/nudge-mcp-server.mjs)
 cp -R "${CORE}/tests" "${CC_DIST}/tests"
+for f in "${CC_DIST}/tests/"*.mjs; do
+  [ -f "$f" ] || continue
+  sed -i '' \
+    -e "s|from '../lib/|from '../scripts/lib/|g" \
+    -e "s|import('../lib/|import('../scripts/lib/|g" \
+    -e "s|'..', 'nudge-mcp-server.mjs'|'..', 'servers', 'nudge-mcp-server.mjs'|g" \
+    "$f"
+done
 
 echo "  Built: dist/claude-code/"
 

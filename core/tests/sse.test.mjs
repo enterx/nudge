@@ -44,7 +44,7 @@ describe('waitForDecision', () => {
     });
 
     // Import fresh to avoid stale module state
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     const result = await waitForDecision(server.sseUrl, 'test-token');
     assert.equal(result.action, 'approved');
@@ -61,7 +61,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     const result = await waitForDecision(server.sseUrl, 'test-token');
     assert.equal(result.action, 'denied');
@@ -81,7 +81,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     try {
       const result = await waitForDecision(keepaliveServer.sseUrl, 'test-token');
@@ -92,7 +92,7 @@ describe('waitForDecision', () => {
   });
 
   it('throws error when no RTDB stream URL is provided', async () => {
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     await assert.rejects(
       () => waitForDecision('', 'test-token'),
@@ -104,7 +104,7 @@ describe('waitForDecision', () => {
   });
 
   it('throws error when RTDB stream URL is null', async () => {
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     await assert.rejects(
       () => waitForDecision(null, 'test-token'),
@@ -127,7 +127,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     try {
       const result = await waitForDecision(customServer.sseUrl, 'test-token');
@@ -145,7 +145,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
     await waitForDecision(server.sseUrl, 'my-secret-token');
 
     // Check that the SSE request had the auth parameter
@@ -161,7 +161,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
     // URL already has a query param — should use & instead of ?
     const urlWithParam = `${server.sseUrl}?orderBy="$key"`;
     const result = await waitForDecision(urlWithParam, 'tok');
@@ -180,7 +180,7 @@ describe('waitForDecision', () => {
       sseCloseAfterSend: true,
     });
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     try {
       const result = await waitForDecision(directServer.sseUrl, 'tok');
@@ -207,7 +207,7 @@ describe('waitForDecision', () => {
     // server architecture. Instead, test with a non-existent port.
     await errorServer.stop();
 
-    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+    const { waitForDecision } = await import('../lib/sse.mjs');
 
     // Use a URL that will fail to connect
     const badUrl = 'http://127.0.0.1:1/sse/nonexistent.json';

@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SERVER_PATH = join(__dirname, '..', 'servers', 'nudge-mcp-server.mjs');
+const SERVER_PATH = join(__dirname, '..', 'nudge-mcp-server.mjs');
 
 // --- Helpers ---
 

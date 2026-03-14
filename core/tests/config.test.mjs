@@ -24,7 +24,7 @@ const savedApiUrl = process.env.NUDGE_API_URL;
 delete process.env.NUDGE_API_URL;
 
 // Dynamic import after env setup
-const { readConfig, getApiUrl } = await import('../scripts/lib/config.mjs');
+const { readConfig, getApiUrl } = await import('../lib/config.mjs');
 
 // --- Setup & teardown ---
 

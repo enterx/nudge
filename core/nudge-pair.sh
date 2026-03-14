@@ -27,11 +27,9 @@ PAIR_RESPONSE=$(api_post "pairGenerate" "{}") || {
 }
 
 PAIRING_CODE=$(json_extract "${PAIR_RESPONSE}" "pairingCode")
-PAIR_ID=$(json_extract "${PAIR_RESPONSE}" "pairId")
 TOKEN=$(json_extract "${PAIR_RESPONSE}" "token")
 REFRESH_TOKEN=$(json_extract "${PAIR_RESPONSE}" "refreshToken")
 API_KEY_VALUE=$(json_extract "${PAIR_RESPONSE}" "apiKey")
-EXPIRES_AT=$(json_extract_raw "${PAIR_RESPONSE}" "expiresAt")
 
 if [ -z "${PAIRING_CODE}" ] || [ -z "${TOKEN}" ]; then
   echo "Error: Could not generate pairing code."
@@ -75,9 +73,15 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
     "paired")
       USER_ID=$(json_extract "${VERIFY_RESPONSE}" "userId")
 
+      # Validate required fields before writing config
+      if [ -z "${TOKEN}" ] || [ -z "${USER_ID}" ]; then
+        echo "Error: Incomplete pairing response from server."
+        exit 1
+      fi
+
       # Token was received from pairGenerate, not from pairVerify
       # Save config with refresh token and API key for auto-refresh
-      if command -v jq &>/dev/null; then
+      if _has_jq; then
         config_write_json "$(jq -n \
           --arg token "${TOKEN}" \
           --arg refreshToken "${REFRESH_TOKEN}" \

@@ -19,8 +19,7 @@ fi
 
 # --- Read askMode from config ---
 
-ASK_MODE=$(config_read "askMode" 2>/dev/null) || true
-ASK_MODE="${ASK_MODE:-nudge}"  # Default to nudge if not set
+ASK_MODE=$(_get_ask_mode)
 
 # --- Build context message ---
 
@@ -38,11 +37,11 @@ esac
 
 # --- Output JSON with additionalContext ---
 
-if command -v jq &>/dev/null; then
+if _has_jq; then
   jq -n --arg ctx "${CONTEXT}" \
     '{ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: $ctx } }'
 else
-  SAFE_CTX=$(printf '%s' "${CONTEXT}" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  SAFE_CTX=$(_safe_json_string "${CONTEXT}")
   echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"${SAFE_CTX}\"}}"
 fi
 

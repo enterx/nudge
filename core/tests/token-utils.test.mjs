@@ -24,7 +24,7 @@ process.env.NUDGE_CONFIG_DIR = TEST_DIR;
 
 // Import after setting env vars so constants pick them up
 const { decodeJwtPayload, isTokenExpired, refreshToken, getValidToken } =
-  await import('../scripts/lib/token-utils.mjs');
+  await import('../lib/token-utils.mjs');
 
 // --- Setup & teardown ---
 
