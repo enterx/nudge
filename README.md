@@ -1,35 +1,42 @@
 # Nudge
 
-Approve AI coding tool actions from your phone.
+Approve AI coding tool actions from your phone -- with end-to-end encryption.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Node: 18+](https://img.shields.io/badge/Node-18%2B-green.svg)
+![Encryption: AES-256-GCM](https://img.shields.io/badge/Encryption-AES--256--GCM-brightgreen.svg)
+![E2E: Zero Knowledge](https://img.shields.io/badge/E2E-Zero%20Knowledge-brightgreen.svg)
 
 Nudge sends permission requests and questions from your AI coding tool to your phone as push notifications. You approve or deny with a tap, and the tool continues -- no terminal required.
+
+**Your commands, code, and file paths are encrypted before leaving your machine.** The Nudge server only sees ciphertext -- it cannot read what you're approving. Push notifications are decrypted on-device via iOS Notification Service Extension / Android background handler. [See how it works.](#end-to-end-encryption)
 
 ## How it works
 
 ```
-┌──────────────┐     hooks      ┌─────────────┐     HTTPS     ┌──────────────┐
-│  Claude Code │  ──────────>   │             │  ──────────>  │              │
-│              │                │ Nudge Plugin│               │ Nudge Server │
-│              │  <──────────   │             │  <──────────  │              │
-└──────────────┘  allow/deny    └─────────────┘   SSE stream  └──────┬───────┘
+┌──────────────┐     hooks      ┌─────────────┐   encrypted   ┌──────────────┐
+│  Claude Code │  ──────────>   │ Nudge Plugin│  ──────────>  │              │
+│              │                │   AES-256   │   HTTPS/TLS   │ Nudge Server │
+│              │  <──────────   │   encrypt   │  <──────────  │ (ciphertext  │
+└──────────────┘  allow/deny    └─────────────┘   SSE stream  │  only)       │
+                                                              └──────┬───────┘
                                                                      │
                                                                      │ FCM push
+                                                                     │ (encrypted)
                                                                      v
                                                               ┌──────────────┐
                                                               │  Nudge App   │
-                                                              │  (iOS)       │
+                                                              │  decrypt on  │
+                                                              │  device      │
                                                               └──────────────┘
 ```
 
 1. Your AI tool triggers a permission-requiring action (Bash, Write, Edit, etc.)
-2. The plugin hook intercepts it, creates an event on the Nudge server, and opens an SSE stream
-3. The server sends a push notification to your phone via FCM
-4. You tap Approve or Deny on your phone
-5. The response flows back through the SSE stream to the hook
-6. The AI tool receives `allow` or `deny` and continues
+2. The plugin **encrypts** the event (AES-256-GCM) and sends ciphertext to the Nudge server
+3. The server forwards the encrypted push notification to your phone via FCM -- **it never sees plaintext**
+4. Your phone **decrypts on-device** and shows the full command details
+5. You tap Approve or Deny
+6. The response flows back through the SSE stream, and the AI tool continues
 
 ## Prerequisites
 
@@ -212,7 +219,9 @@ SSE streaming uses Firebase Realtime Database REST API for real-time response de
 
 ## End-to-end encryption
 
-All sensitive data is encrypted with **AES-256-GCM** before leaving your machine. The Nudge server stores only ciphertext — even we can't read your commands, code, or file paths.
+Nudge is **zero-knowledge by design**. All sensitive data is encrypted with **AES-256-GCM** before leaving your machine. The encryption key is generated locally and never sent to the server -- not even during pairing (the key is wrapped with PBKDF2 and only your phone can unwrap it).
+
+**The Nudge server cannot read your commands, code, file paths, or project names.** It stores and forwards only ciphertext. Even if the server were compromised, your data remains encrypted.
 
 ### What's encrypted
 
