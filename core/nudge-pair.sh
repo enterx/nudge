@@ -36,6 +36,8 @@ if [ -z "${PAIRING_CODE}" ] || [ -z "${TOKEN}" ]; then
   exit 1
 fi
 
+PAIR_ID=$(json_extract "${PAIR_RESPONSE}" "pairId")
+
 echo "  Code: ${PAIRING_CODE}  (expires 10 min)"
 echo ""
 echo "  Scan QR or enter code in the Nudge app."
@@ -79,6 +81,16 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
         exit 1
       fi
 
+      # --- Generate and upload encryption key ---
+      # Sensitive args passed via stdin to avoid exposure in ps aux
+
+      ENCRYPTION_KEY=$(printf '{"pairingCode":"%s","userId":"%s","token":"%s","apiUrl":"%s"}' \
+        "${PAIRING_CODE}" "${PAIR_ID}" "${TOKEN}" "${API_URL}" \
+        | node "${SCRIPT_DIR}/lib/setup-encryption.mjs" 2>/dev/null) || {
+        echo "Warning: E2E encryption setup failed. Continuing without encryption."
+        ENCRYPTION_KEY=""
+      }
+
       # Token was received from pairGenerate, not from pairVerify
       # Save config with refresh token and API key for auto-refresh
       if _has_jq; then
@@ -89,13 +101,15 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
           --arg userId "${USER_ID}" \
           --arg apiUrl "${API_URL}" \
           --arg pairingCode "${PAIRING_CODE}" \
+          --arg encryptionKey "${ENCRYPTION_KEY}" \
           '{
             token: $token,
             refreshToken: $refreshToken,
             apiKey: $apiKey,
             userId: $userId,
             apiUrl: $apiUrl,
-            pairingCode: $pairingCode
+            pairingCode: $pairingCode,
+            encryptionKey: $encryptionKey
           }')"
       else
         config_write_json "{
@@ -104,7 +118,8 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
   \"apiKey\": \"${API_KEY_VALUE}\",
   \"userId\": \"${USER_ID}\",
   \"apiUrl\": \"${API_URL}\",
-  \"pairingCode\": \"${PAIRING_CODE}\"
+  \"pairingCode\": \"${PAIRING_CODE}\",
+  \"encryptionKey\": \"${ENCRYPTION_KEY}\"
 }"
       fi
 

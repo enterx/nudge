@@ -136,7 +136,8 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudg
   "userId": "<firebase-uid>",
   "apiUrl": "https://your-nudge-api.cloudfunctions.net",
   "pairingCode": "ABC-DEF",
-  "askMode": "nudge"
+  "askMode": "nudge",
+  "encryptionKey": "<base64-encoded-aes-256-key>"
 }
 ```
 
@@ -203,35 +204,77 @@ The Nudge backend (Cloud Functions + Firebase) is not included in this repositor
 - `POST /eventsRespond/:eventId/respond` -- Respond to an event
 - `POST /pairGenerate` -- Generate a pairing code
 - `POST /pairVerify` -- Verify pairing status
+- `POST /pairKeyExchange` -- Store wrapped E2E encryption key
 - `POST /testNotification` -- Send a test push
 - `GET /status` -- Health check
 
 SSE streaming uses Firebase Realtime Database REST API for real-time response delivery.
 
+## End-to-end encryption
+
+All sensitive data is encrypted with **AES-256-GCM** before leaving your machine. The Nudge server stores only ciphertext — even we can't read your commands, code, or file paths.
+
+### What's encrypted
+
+| Field | Encrypted | Plaintext |
+|-------|-----------|-----------|
+| Tool input (commands, code, diffs) | Yes | — |
+| Description (action summary) | Yes | — |
+| Context (conversation summary) | Yes | — |
+| Working directory (cwd) | Yes | — |
+| Session name | Yes | — |
+| Tool name (`Bash`, `Edit`, etc.) | — | Yes |
+| Event pattern (`approval`, etc.) | — | Yes |
+
+### How it works
+
+```
+1. /nudge:pair generates a random AES-256 key
+2. Key is wrapped with PBKDF2(pairing_code, 600k iterations)
+3. Wrapped key is uploaded — server can't unwrap it (code expires in 10 min)
+4. Mobile app unwraps the key using the same pairing code
+5. All subsequent events are encrypted before sending
+```
+
+### Push notifications
+
+Encrypted payloads are decrypted **on your device** via iOS Notification Service Extension / Android background handler. Push notifications show full details (commands, file paths) without the server ever seeing plaintext.
+
+### Audit the code
+
+The encryption implementation is fully open-source:
+
+- **Key generation & encryption**: [`core/lib/crypto.mjs`](core/lib/crypto.mjs)
+- **Key exchange during pairing**: [`core/lib/setup-encryption.mjs`](core/lib/setup-encryption.mjs)
+- **Event encryption before sending**: [`core/nudge-mcp-server.mjs`](core/nudge-mcp-server.mjs) (`encryptSensitiveFields`)
+
 ## Privacy & data handling
 
 When you approve or deny an action, the following data is sent to the Nudge server:
 
-- **Tool name and input** (e.g., `Bash: npm test`) -- so you can see what you're approving on your phone
-- **Context and session name** -- if provided by the AI tool
+- **Tool name** (e.g., `Bash`, `Edit`) -- plaintext, so push notification buttons work
+- **Encrypted payload** -- your commands, code, descriptions, and context (AES-256-GCM ciphertext)
 - **Your response** (approve/deny/selected options)
 
 ### How data is stored
 
-| Data | Storage | Retention |
-|------|---------|-----------|
-| Event details (tool name, input, description) | Firebase RTDB | Deleted 1 hour after response, or 24 hours if unanswered |
-| Your response (approve/deny) | Firebase RTDB | Same as above |
-| Device token (for push notifications) | Firestore | Until you unpair or delete your account |
+| Data | Storage | Encrypted | Retention |
+|------|---------|-----------|-----------|
+| Event content (tool input, description, context, cwd, session name) | Firebase RTDB | Yes (AES-256-GCM) | 1h after response, 24h if unanswered |
+| Tool name, pattern | Firebase RTDB | No | Same as above |
+| Your response (approve/deny) | Firebase RTDB | No | Same as above |
+| Device token (for push notifications) | Firestore | No | Until you unpair |
+| Encryption key | Your device only | — | Never sent to server |
 
 - A scheduled cleanup function runs every 24 hours to delete expired events.
 - Deleting your account removes **all** stored data (events, device tokens, pairing records).
-- Credentials in tool inputs (API keys, tokens, passwords) are **redacted before sending** -- the server never receives them.
-- All communication uses HTTPS. Auth tokens are short-lived JWTs with automatic refresh.
+- Credentials in tool inputs (API keys, tokens, passwords) are **redacted before encryption** -- double protection.
+- All communication uses HTTPS/TLS 1.3. Auth tokens are short-lived JWTs with automatic refresh.
 
-### What is NOT stored
+### What the server NEVER sees
 
-- Your source code or file contents (only file paths are sent for Write/Edit actions)
+- Your source code, commands, or file contents (encrypted before sending)
+- Your encryption key (generated and stored locally only)
 - Conversation history or full prompts
 - Environment variables or `.env` file contents
 

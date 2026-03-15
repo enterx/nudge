@@ -24,10 +24,12 @@ import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
+import { encryptFields } from './lib/crypto.mjs';
+import { randomUUID } from 'node:crypto';
 
 const { log: debugLog } = createLogger('mcp-debug');
 
-const SESSION_ID = `claude-code-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const SESSION_ID = `claude-code-${randomUUID()}`;
 
 // --- Input validation ---
 
@@ -37,6 +39,46 @@ function validateStringLength(value, name) {
   if (typeof value === 'string' && value.length > MAX_STRING_LENGTH) {
     throw new Error(`${name} exceeds maximum length of ${MAX_STRING_LENGTH} characters`);
   }
+}
+
+// --- Encryption helpers ---
+
+function getEncryptionKey() {
+  const config = readConfig();
+  return config?.encryptionKey || null;
+}
+
+/**
+ * Encrypt sensitive fields if an encryption key is available.
+ * Returns the encrypted fields to spread into the API request body,
+ * replacing the plaintext versions.
+ */
+function encryptSensitiveFields(fields) {
+  const key = getEncryptionKey();
+  if (!key) return null;
+
+  // Full payload for RTDB (includes toolInput — can be large)
+  const full = encryptFields(key, {
+    toolInput: fields.toolInput,
+    description: fields.description,
+    ...(fields.context && { context: fields.context }),
+    ...(fields.cwd && { cwd: fields.cwd }),
+    ...(fields.sessionName && { sessionName: fields.sessionName }),
+  });
+
+  // Small notification payload for FCM push (description + sessionName)
+  // Decrypted on-device by iOS NSE / Android background handler
+  const notif = encryptFields(key, {
+    description: fields.description,
+    ...(fields.sessionName && { sessionName: fields.sessionName }),
+  });
+
+  return {
+    encryptedPayload: full.encryptedPayload,
+    iv: full.iv,
+    encryptedNotif: notif.encryptedPayload,
+    notifIv: notif.iv,
+  };
 }
 
 // --- Auth helper ---
@@ -98,20 +140,34 @@ async function handleNudgeAskUser(args, requestId) {
 
   const { token, apiUrl } = await getAuthContext();
 
+  const sensitiveFields = {
+    toolInput: { question, options, multiSelect },
+    description: question,
+    ...(context && { context }),
+    ...(sessionName && { sessionName }),
+  };
+  const encrypted = encryptSensitiveFields(sensitiveFields);
+
   const createResp = await apiPost(
     apiUrl,
     'eventsCreate',
     {
       provider: PROVIDER,
       toolName: 'nudge_ask_user',
-      toolInput: { question, options, multiSelect },
-      description: question,
-      ...(context && { context }),
-      ...(sessionName && { sessionName }),
       pattern: 'elicitation',
       sessionId: SESSION_ID,
       options,
       multiSelect,
+      ...(encrypted
+        ? {
+            encryptedPayload: encrypted.encryptedPayload,
+            iv: encrypted.iv,
+            encryptedNotif: encrypted.encryptedNotif,
+            notifIv: encrypted.notifIv,
+            toolInput: {},
+            description: 'Question for you',
+          }
+        : sensitiveFields),
     },
     token,
   );
@@ -154,19 +210,33 @@ async function handleNudgeApprove(args, requestId) {
 
   const { token, apiUrl } = await getAuthContext();
 
+  const sensitiveFields = {
+    toolInput: argToolInput || { description },
+    description,
+    ...(context && { context }),
+    ...(cwd && { cwd }),
+    ...(sessionName && { sessionName }),
+  };
+  const encrypted = encryptSensitiveFields(sensitiveFields);
+
   const createResp = await apiPost(
     apiUrl,
     'eventsCreate',
     {
       provider: PROVIDER,
       toolName,
-      toolInput: argToolInput || { description },
-      description,
-      ...(context && { context }),
-      ...(cwd && { cwd }),
-      ...(sessionName && { sessionName }),
       pattern: 'approval',
       sessionId: SESSION_ID,
+      ...(encrypted
+        ? {
+            encryptedPayload: encrypted.encryptedPayload,
+            iv: encrypted.iv,
+            encryptedNotif: encrypted.encryptedNotif,
+            notifIv: encrypted.notifIv,
+            toolInput: {},
+            description: `${toolName} requires approval`,
+          }
+        : sensitiveFields),
     },
     token,
   );
@@ -219,16 +289,33 @@ async function handleNudgeNotify(args) {
 
   const { token, apiUrl } = await getAuthContext();
 
+  const sensitiveFields = {
+    toolInput: {},
+    description: body,
+    ...(context && { context }),
+    ...(sessionName && { sessionName }),
+  };
+  const encrypted = encryptSensitiveFields(sensitiveFields);
+
   await apiPost(
     apiUrl,
     'pushNotifyFn',
     {
       title,
-      body,
       level,
       sessionId: SESSION_ID,
-      ...(context && { context }),
-      ...(sessionName && { sessionName }),
+      ...(encrypted
+        ? {
+            encryptedPayload: encrypted.encryptedPayload,
+            iv: encrypted.iv,
+            encryptedNotif: encrypted.encryptedNotif,
+            notifIv: encrypted.notifIv,
+            body: 'Open app to view details',
+          }
+        : {
+            body,
+            ...(context && { context }),
+          }),
     },
     token,
   );
