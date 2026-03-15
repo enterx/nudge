@@ -9,8 +9,9 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 import { PROVIDER } from './lib/constants.mjs';
 import { createLogger } from './lib/logger.mjs';
@@ -21,6 +22,28 @@ import { waitForDecision } from './lib/sse.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
 
 const { log: hookLog } = createLogger('hook-debug');
+
+// --- Pending event tracking ---
+// Stores the current eventId so PostToolUse can cancel it if the user
+// responded via terminal (bypassing the mobile approval).
+
+function pendingFilePath(sessionId) {
+  return join(homedir(), '.nudge', `pending-${sessionId}.json`);
+}
+
+function writePending(sessionId, eventId, apiUrl, token) {
+  try {
+    writeFileSync(
+      pendingFilePath(sessionId),
+      JSON.stringify({ eventId, apiUrl, token }),
+      { mode: 0o600 },
+    );
+  } catch { /* best-effort */ }
+}
+
+function clearPending(sessionId) {
+  try { unlinkSync(pendingFilePath(sessionId)); } catch { /* ignore */ }
+}
 
 // --- Description builders ---
 
@@ -220,18 +243,21 @@ async function main() {
     process.exit(0);
   }
 
+  // Track this event so PostToolUse can cancel it if the user bypassed via terminal
+  writePending(sessionId, eventId, apiUrl, token);
+
   process.stderr.write(
     `Nudge: Waiting for approval on your phone... (event: ${eventId})\n`,
   );
 
   // Cancel event on the backend when the hook is interrupted (Escape / SIGINT).
-  // Single boolean guard prevents race conditions from multiple signals.
-  let cancelled = false;
+  let cancelRequested = false;
 
   const cancelAndExit = (signal) => {
-    if (cancelled) return;
-    cancelled = true;
+    if (cancelRequested) return;
+    cancelRequested = true;
     hookLog(`signal: ${signal}, cancelling eventId=${eventId}`);
+    clearPending(sessionId);
     fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
       method: 'POST',
       headers: {
@@ -255,12 +281,14 @@ async function main() {
   let decision;
   try {
     decision = await waitForDecision(rtdbStreamUrl, token);
-    cancelled = true; // Prevent cancel on normal completion
   } catch {
     cancelAndExit('sse-error');
     return;
   }
   const action = decision.action;
+
+  // Mobile responded — clear pending file
+  clearPending(sessionId);
 
   if (action === 'approved' || action === 'approved_always') {
     const isAlways = action === 'approved_always';

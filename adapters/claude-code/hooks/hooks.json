@@ -36,6 +36,19 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-cancel-pending.mjs",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
