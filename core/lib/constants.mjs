@@ -22,7 +22,7 @@ export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
 export const DEFAULT_API_URL =
   process.env.NUDGE_API_URL ||
-  'https://us-central1-enterx-nudge-dev.cloudfunctions.net';
+  'https://api.appnudge.dev';
 
 export const API_TIMEOUT_MS = 30_000;
 export const REFRESH_TOKEN_TIMEOUT_MS = 10_000;

@@ -203,7 +203,7 @@ echo "lib.sh / get_api_url"
 remove_config
 result=$(run_lib 'get_api_url')
 expect_eq "returns default URL without config" \
-  "https://us-central1-enterx-nudge-dev.cloudfunctions.net" "${result}"
+  "https://api.appnudge.dev" "${result}"
 
 write_config '{"apiUrl":"https://custom.example.com"}'
 result=$(run_lib 'get_api_url')

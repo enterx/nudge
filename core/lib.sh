@@ -9,7 +9,7 @@ set -euo pipefail
 NUDGE_CONFIG_DIR="${HOME}/.nudge"
 NUDGE_CONFIG_FILE="${NUDGE_CONFIG_DIR}/config"
 NUDGE_LOG_FILE="${NUDGE_CONFIG_DIR}/nudge.log"
-NUDGE_DEFAULT_API_URL="${NUDGE_API_URL:-https://us-central1-enterx-nudge-dev.cloudfunctions.net}"
+NUDGE_DEFAULT_API_URL="${NUDGE_API_URL:-https://api.appnudge.dev}"
 
 # SSE connection settings
 SSE_MAX_TIME=520       # curl --max-time for SSE (just under Cloud Functions 540s limit)
