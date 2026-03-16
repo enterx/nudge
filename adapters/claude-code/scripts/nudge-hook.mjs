@@ -193,15 +193,34 @@ async function main() {
   const sanitizedInput = buildToolInput(toolInput);
   const sessionName = extractSessionName(transcriptPath);
 
+  // --- AskUserQuestion: send as elicitation, return answer via deny ---
+  const isAskUser = toolName === 'AskUserQuestion';
+  let askUserQuestion = null;
+  let askUserOptions = null;
+  let askUserMultiSelect = false;
+
+  if (isAskUser && Array.isArray(toolInput.questions) && toolInput.questions.length > 0) {
+    const q = toolInput.questions[0];
+    askUserQuestion = q.question || '';
+    askUserMultiSelect = !!q.multiSelect;
+    askUserOptions = (q.options || []).map((opt) => ({
+      value: opt.label,
+      label: opt.label,
+      ...(opt.description && { description: opt.description }),
+    }));
+  }
+
   const payload = {
     provider: PROVIDER,
     toolName,
-    toolInput: sanitizedInput,
-    description,
-    pattern: 'approval',
+    toolInput: isAskUser ? {} : sanitizedInput,
+    description: isAskUser ? askUserQuestion || description : description,
+    pattern: isAskUser ? 'elicitation' : 'approval',
     sessionId,
     ...(cwd && { cwd }),
     ...(sessionName && { sessionName }),
+    ...(isAskUser && askUserOptions && { options: askUserOptions }),
+    ...(isAskUser && { multiSelect: askUserMultiSelect }),
   };
 
   // POST event
@@ -325,6 +344,25 @@ async function main() {
       hookSpecificOutput: {
         hookEventName: 'PermissionRequest',
         decision: { behavior: 'allow' },
+      },
+    });
+  } else if (action === 'answered' && isAskUser) {
+    // AskUserQuestion: user answered on mobile — return answer via deny
+    // so Claude Code receives the selection without a terminal prompt.
+    const selected = decision.selectedOptions || [];
+    const freeText = decision.reason || '';
+    const answerLabel = selected.length > 0 ? selected.join(', ') : freeText || 'No answer';
+    const questionText = askUserQuestion || 'question';
+    const answerMessage = `User has answered your questions: "${questionText}"="${answerLabel}"`;
+    process.stderr.write(`Nudge: User answered — ${answerLabel}\n`);
+
+    return exitWithOutput({
+      hookSpecificOutput: {
+        hookEventName: 'PermissionRequest',
+        decision: {
+          behavior: 'deny',
+          message: answerMessage,
+        },
       },
     });
   } else if (action === 'denied') {
