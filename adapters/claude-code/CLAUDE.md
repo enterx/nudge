@@ -1,35 +1,44 @@
 ## Nudge Plugin
 
-### How Nudge Works — Two Systems
+### How Nudge Works — Hooks-First Architecture
 
-Nudge has **two separate mechanisms**. Understanding the boundary prevents
-double notifications:
+Nudge uses **hooks** as the primary mechanism for all user interactions:
 
-1. **Hook (automatic):** Intercepts `Bash`, `Write`, `Edit`, `NotebookEdit`
-   tool calls via PreToolUse. The user approves/denies on their phone.
+1. **Approval hook (automatic):** Intercepts `Bash`, `Write`, `Edit`, `NotebookEdit`
+   tool calls via PermissionRequest. The user approves/denies on their phone.
    This happens **automatically** — Claude does NOT need to do anything.
 
-2. **MCP tools (explicit):** Claude calls these directly for communication
-   that is NOT a tool-call approval.
+2. **Ask user hook (automatic):** Intercepts `AskUserQuestion` via PreToolUse.
+   In nudge mode, the question is forwarded to the user's phone and the answer
+   is returned via `additionalContext`. In terminal mode, it passes through
+   to the terminal dialog. **Use standard `AskUserQuestion` — hooks handle the rest.**
+
+3. **MCP tools (fallback):** `nudge_ask_user` and `nudge_approve` exist as
+   fallbacks for environments that don't support hooks (e.g., future Cursor/Gemini
+   adapters). **Do NOT use these in Claude Code** — hooks handle everything.
+
+4. **Notification MCP tool (explicit):** `nudge_notify` is the only MCP tool
+   Claude should call directly, for one-way status updates.
 
 ### Ask Mode — Terminal vs Mobile
 
-The user can toggle how questions are delivered via `/nudge:afk` or `/nudge:desk`:
+The user toggles mode via `/nudge:afk` or `/nudge:desk`:
 
-- **`nudge` mode** (default): Use `nudge_ask_user` for questions. User is AFK.
-- **`terminal` mode**: Use standard `AskUserQuestion`. User is at the terminal.
+- **`nudge` mode** (default): AskUserQuestion is forwarded to mobile via hook.
+  Approvals are handled via mobile. User is AFK.
+- **`terminal` mode**: AskUserQuestion shows in terminal normally.
+  Approvals show in terminal. User is at the terminal.
 
-The active mode is injected via SessionStart hook. Check the context message
-at session start — it will say either "Ask mode: NUDGE" or "Ask mode: TERMINAL".
-**Follow this instruction** — it overrides the default MCP tool usage below.
+The active mode is injected via SessionStart hook. **Always use standard
+`AskUserQuestion`** — the hook automatically routes it based on mode.
 
 ### MCP Tool Usage
 
 | Tool | When to use |
 |------|-------------|
-| `nudge_ask_user` | Questions, choices, gathering preferences. Use **instead of** `AskUserQuestion` when in nudge mode. |
-| `nudge_approve` | High-level decisions that are NOT tool calls (e.g., "Deploy to prod?", "Refactor this module?"). **Never** use for actions that will trigger a Bash/Write/Edit tool call — the hook already handles those. |
-| `nudge_notify` | One-way status updates (fire-and-forget). No response expected. |
+| `nudge_notify` | One-way status updates (fire-and-forget). No response expected. **Always use this.** |
+| `nudge_approve` | Yes/no decisions that are NOT tool-call approvals — e.g., "Deploy to prod?", "Create PR?", "Proceed with this approach?". Tool-call approvals (Bash, Write, Edit) are handled automatically by hooks. |
+| `nudge_ask_user` | **Fallback only** — use `AskUserQuestion` instead (hooks handle routing). |
 
 ### `nudge_notify` — Task Completion Notifications (MANDATORY)
 
@@ -67,8 +76,8 @@ context: "User reported two bugs: (1) QR camera wouldn't re-scan after a failed 
 level: "success"
 ```
 
-Do NOT use `nudge_notify` when you need a response — use `nudge_ask_user` or
-`nudge_approve` instead.
+Do NOT use `nudge_notify` when you need a response — use `AskUserQuestion`
+instead (hooks will route it to mobile if in nudge mode).
 
 ### After Every Task — Always Ask What's Next
 
@@ -76,12 +85,12 @@ Do NOT use `nudge_notify` when you need a response — use `nudge_ask_user` or
 
 After completing a task:
 1. Send `nudge_notify` with the result summary
-2. Then call `nudge_ask_user` to ask what to do next
+2. Then use `AskUserQuestion` to ask what to do next
 
 Example flow:
 ```
 → nudge_notify(title: "Auth Fix Complete", body: "...", level: "success")
-→ nudge_ask_user(question: "What would you like to do next?", options: [...])
+→ AskUserQuestion(question: "What would you like to do next?", options: [...])
 ```
 
 Do NOT assume the next step. Do NOT chain tasks without asking. Always wait
@@ -95,11 +104,11 @@ and your work goes unnoticed.
 
 Required flow after every task completion:
 1. Send a result summary via `nudge_notify`
-2. **Immediately call `nudge_ask_user`** to ask what to do next (e.g., "Anything else you'd like me to work on?")
-3. Wait for the user's response (they will receive a push notification even while AFK — just wait)
-4. Only stop when the user **explicitly** says they're done (e.g., "nothing", "that's all", "done")
+2. **Immediately use `AskUserQuestion`** to ask what to do next
+3. Wait for the user's response (hooks will forward to mobile — just wait)
+4. Only stop when the user **explicitly** says they're done
 
-**Call `nudge_ask_user` instead of stopping. No exceptions.**
+**Use `AskUserQuestion` instead of stopping. No exceptions.**
 
 ### Security — Never Send Secrets
 
@@ -120,9 +129,8 @@ but Claude must **never intentionally include secrets** in MCP tool calls.
 
 ### Required Parameters
 
-**Always include the `context` parameter** when calling `nudge_ask_user`,
-`nudge_approve`, or `nudge_notify`. The user reads this on their phone to
-understand the full situation.
+**Always include the `context` parameter** when calling `nudge_notify`.
+The user reads this on their phone to understand the full situation.
 
 **Always include the `sessionName` parameter** with a short name describing the
 current coding session or project (e.g. "Nudge UI Refresh", "Auth bugfix").
@@ -130,8 +138,9 @@ This is shown as the session title on the mobile app.
 
 ### Fallback
 
-If any nudge tool fails (user not paired, network error), fall back to the
-corresponding built-in tool (AskUserQuestion or terminal prompt).
+If any nudge hook or tool fails (user not paired, network error), Claude Code
+falls back to the corresponding built-in behavior (terminal prompt for approvals,
+AskUserQuestion dialog for questions).
 
 ### Technical Details
 
@@ -140,6 +149,7 @@ corresponding built-in tool (AskUserQuestion or terminal prompt).
 - **SSE stream**: 520s per connection (`--max-time` / `AbortSignal.timeout`).
   Just under the Cloud Functions 540s execution limit.
 - **PermissionRequest hook**: 86400s (24 hours). The user may be AFK for hours.
+- **PreToolUse hook (AskUserQuestion)**: 86400s (24 hours). Same reason.
 - **Async hooks** (SessionEnd, Activity): 10-30s.
 - **SessionStart hook**: 5s (just reads config and outputs JSON).
 

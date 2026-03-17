@@ -99,6 +99,7 @@ BASE="${DIST}/claude-code/plugins/nudge"
 
 for f in "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.mjs" \
          "scripts/lib/sse.mjs" "scripts/lib/token-utils.mjs" "scripts/lib/logger.mjs" \
+         "scripts/lib/crypto.mjs" "scripts/lib/encrypt-json.mjs" \
          "servers/nudge-mcp-server.mjs" "scripts/nudge-hook.mjs"; do
   if [ ! -f "${BASE}/${f}" ]; then
     echo "  MISSING: ${f}"

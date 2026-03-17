@@ -13,6 +13,7 @@ import { PROVIDER } from './lib/constants.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
+import { encryptFields } from './lib/crypto.mjs';
 
 // --- Main ---
 
@@ -62,12 +63,40 @@ async function main() {
 
   const sessionName = extractSessionName(transcriptPath);
 
-  const payload = {
-    title: description,
-    body: body || description,
-    level: 'info',
-    ...(sessionName && { sessionName }),
-  };
+  // Encrypt sensitive fields if encryption key is available
+  const encryptionKey = config.encryptionKey;
+  let payload;
+
+  if (encryptionKey) {
+    const full = encryptFields(encryptionKey, {
+      description: body || description,
+      ...(sessionName && { sessionName }),
+    });
+    const notif = encryptFields(encryptionKey, {
+      description: body || description,
+      ...(sessionName && { sessionName }),
+    });
+    // Use generic title to avoid leaking query/URL in plaintext FCM push
+    const safeTitle = toolName === 'WebSearch' ? 'Searching...'
+      : toolName === 'WebFetch' ? 'Fetching...'
+      : toolName;
+    payload = {
+      title: safeTitle,
+      level: 'info',
+      encryptedPayload: full.encryptedPayload,
+      iv: full.iv,
+      encryptedNotif: notif.encryptedPayload,
+      notifIv: notif.iv,
+      body: 'Open app to view details',
+    };
+  } else {
+    payload = {
+      title: description,
+      body: body || description,
+      level: 'info',
+      ...(sessionName && { sessionName }),
+    };
+  }
 
   // Fire-and-forget POST — push-only, no RTDB event
   await fetch(`${apiUrl}/pushNotifyFn`, {

@@ -335,7 +335,8 @@ const TOOL_DEFINITION = {
   description:
     'Send a question to the user\'s phone via push notification. ' +
     'The user selects from provided options or types a free-text answer. ' +
-    'Use this instead of AskUserQuestion when nudge is available.',
+    'FALLBACK ONLY: In Claude Code, use standard AskUserQuestion instead — ' +
+    'hooks automatically forward to mobile. Only use this tool in environments without hook support.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -389,7 +390,9 @@ const APPROVE_TOOL_DEFINITION = {
   description:
     'Send an approval request to the user\'s phone via push notification. ' +
     'The user taps Approve or Deny. Returns { approved: boolean, reason: string }. ' +
-    'Use this for actions that need explicit user permission.',
+    'Use this for yes/no decisions that are NOT tool-call approvals — e.g., ' +
+    '"Deploy to prod?", "Create PR?", "Proceed with this approach?". ' +
+    'Tool-call approvals (Bash, Write, Edit) are handled automatically by hooks.',
   inputSchema: {
     type: 'object',
     properties: {

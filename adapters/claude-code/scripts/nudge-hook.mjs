@@ -20,6 +20,7 @@ import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
+import { encryptFields } from './lib/crypto.mjs';
 
 const { log: hookLog } = createLogger('hook-debug');
 
@@ -123,6 +124,35 @@ function exitWithOutput(output) {
   }, 3000).unref();
 }
 
+// --- Encryption helper ---
+
+function encryptSensitiveFields(config, fields) {
+  const key = config?.encryptionKey;
+  if (!key) return null;
+
+  // Full payload for RTDB (includes toolInput — can be large)
+  const full = encryptFields(key, {
+    toolInput: fields.toolInput,
+    description: fields.description,
+    ...(fields.context && { context: fields.context }),
+    ...(fields.cwd && { cwd: fields.cwd }),
+    ...(fields.sessionName && { sessionName: fields.sessionName }),
+  });
+
+  // Small notification payload for FCM push (description + sessionName)
+  const notif = encryptFields(key, {
+    description: fields.description,
+    ...(fields.sessionName && { sessionName: fields.sessionName }),
+  });
+
+  return {
+    encryptedPayload: full.encryptedPayload,
+    iv: full.iv,
+    encryptedNotif: notif.encryptedPayload,
+    notifIv: notif.iv,
+  };
+}
+
 // --- Skip detection ---
 
 function shouldSkip(toolName, toolInput) {
@@ -161,14 +191,17 @@ async function main() {
     process.exit(0);
   }
 
+  // Detect which hook event triggered this script
+  const isAskUser = toolName === 'AskUserQuestion';
+  const hookEventName = isAskUser ? 'PreToolUse' : 'PermissionRequest';
+
   // Explicitly allow nudge's own commands
   if (shouldSkip(toolName, toolInput)) {
-    return exitWithOutput({
-      hookSpecificOutput: {
-        hookEventName: 'PermissionRequest',
-        decision: { behavior: 'allow' },
-      },
-    });
+    return exitWithOutput(
+      isAskUser
+        ? { hookSpecificOutput: { hookEventName, permissionDecision: 'allow' } }
+        : { hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } } },
+    );
   }
 
   const config = readConfig();
@@ -193,8 +226,7 @@ async function main() {
   const sanitizedInput = buildToolInput(toolInput);
   const sessionName = extractSessionName(transcriptPath);
 
-  // --- AskUserQuestion: send as elicitation, return answer via deny ---
-  const isAskUser = toolName === 'AskUserQuestion';
+  // --- AskUserQuestion: send as elicitation, return answer via additionalContext ---
   let askUserQuestion = null;
   let askUserOptions = null;
   let askUserMultiSelect = false;
@@ -210,17 +242,31 @@ async function main() {
     }));
   }
 
+  const sensitiveFields = {
+    toolInput: isAskUser ? {} : sanitizedInput,
+    description: isAskUser ? askUserQuestion || description : description,
+    ...(cwd && { cwd }),
+    ...(sessionName && { sessionName }),
+  };
+  const encrypted = encryptSensitiveFields(config, sensitiveFields);
+
   const payload = {
     provider: PROVIDER,
     toolName,
-    toolInput: isAskUser ? {} : sanitizedInput,
-    description: isAskUser ? askUserQuestion || description : description,
     pattern: isAskUser ? 'elicitation' : 'approval',
     sessionId,
-    ...(cwd && { cwd }),
-    ...(sessionName && { sessionName }),
     ...(isAskUser && askUserOptions && { options: askUserOptions }),
     ...(isAskUser && { multiSelect: askUserMultiSelect }),
+    ...(encrypted
+      ? {
+          encryptedPayload: encrypted.encryptedPayload,
+          iv: encrypted.iv,
+          encryptedNotif: encrypted.encryptedNotif,
+          notifIv: encrypted.notifIv,
+          toolInput: {},
+          description: isAskUser ? 'Question for you' : `${toolName} requires approval`,
+        }
+      : sensitiveFields),
   };
 
   // POST event
@@ -342,36 +388,44 @@ async function main() {
 
     return exitWithOutput({
       hookSpecificOutput: {
-        hookEventName: 'PermissionRequest',
+        hookEventName,
         decision: { behavior: 'allow' },
       },
     });
   } else if (action === 'answered' && isAskUser) {
-    // AskUserQuestion: user answered on mobile — return answer via deny
-    // so Claude Code receives the selection without a terminal prompt.
+    // AskUserQuestion: user answered on mobile — deny the terminal dialog
+    // and inject the answer via additionalContext so Claude receives it.
     const selected = decision.selectedOptions || [];
     const freeText = decision.reason || '';
     const answerLabel = selected.length > 0 ? selected.join(', ') : freeText || 'No answer';
     const questionText = askUserQuestion || 'question';
-    const answerMessage = `User has answered your questions: "${questionText}"="${answerLabel}"`;
+    const answerContext = `User has answered your questions: "${questionText}"="${answerLabel}". You can now continue with the user's answers in mind.`;
     process.stderr.write(`Nudge: User answered — ${answerLabel}\n`);
 
     return exitWithOutput({
       hookSpecificOutput: {
-        hookEventName: 'PermissionRequest',
-        decision: {
-          behavior: 'deny',
-          message: answerMessage,
-        },
+        hookEventName,
+        permissionDecision: 'deny',
+        additionalContext: answerContext,
       },
     });
   } else if (action === 'denied') {
     const reason = decision.reason || 'No reason given';
     process.stderr.write(`Nudge: Denied — ${reason}\n`);
 
+    if (isAskUser) {
+      return exitWithOutput({
+        hookSpecificOutput: {
+          hookEventName,
+          permissionDecision: 'deny',
+          additionalContext: `User declined to answer: ${reason}`,
+        },
+      });
+    }
+
     return exitWithOutput({
       hookSpecificOutput: {
-        hookEventName: 'PermissionRequest',
+        hookEventName,
         decision: {
           behavior: 'deny',
           message: `Denied via Nudge: ${reason}`,

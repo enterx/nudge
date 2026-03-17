@@ -74,18 +74,56 @@ fi
 # --- Send notification ---
 API_URL=$(get_api_url)
 
-if _has_jq; then
-  BODY=$(jq -n \
-    --arg type "${NOTIFICATION_TYPE}" \
-    --arg title "${TITLE}" \
-    --arg message "${MESSAGE}" \
-    --arg sessionId "${SESSION_ID}" \
-    '{type: $type, title: $title, message: $message, sessionId: $sessionId}')
+# Try to encrypt sensitive fields via Node.js helper
+ENCRYPT_HELPER="${SCRIPT_DIR}/lib/encrypt-json.mjs"
+ENCRYPTED_JSON=""
+
+if [ -f "${ENCRYPT_HELPER}" ] && command -v node >/dev/null 2>&1; then
+  # Build plaintext fields JSON for encryption
+  if _has_jq; then
+    ENCRYPT_INPUT=$(jq -n \
+      --arg description "${MESSAGE}" \
+      --arg sessionName "${SESSION_ID}" \
+      '{description: $description, sessionName: $sessionName}')
+  else
+    SAFE_ENC_MSG=$(_safe_json_string "${MESSAGE}")
+    ENCRYPT_INPUT="{\"description\":\"${SAFE_ENC_MSG}\",\"sessionName\":\"${SESSION_ID}\"}"
+  fi
+
+  ENCRYPTED_JSON=$(echo "${ENCRYPT_INPUT}" | node "${ENCRYPT_HELPER}" 2>/dev/null) || ENCRYPTED_JSON=""
+fi
+
+if [ -n "${ENCRYPTED_JSON}" ]; then
+  # Encrypted path: include encrypted payload, use placeholder for message
+  if _has_jq; then
+    BODY=$(echo "${ENCRYPTED_JSON}" | jq \
+      --arg type "${NOTIFICATION_TYPE}" \
+      --arg title "${TITLE}" \
+      --arg sessionId "${SESSION_ID}" \
+      '{type: $type, title: $title, message: "Open app to view details", sessionId: $sessionId} + .')
+  else
+    # Extract encrypted fields from JSON
+    ENC_PAYLOAD=$(echo "${ENCRYPTED_JSON}" | grep -o '"encryptedPayload":"[^"]*"' | head -1 | sed 's/"encryptedPayload":"//;s/"$//')
+    ENC_IV=$(echo "${ENCRYPTED_JSON}" | grep -o '"iv":"[^"]*"' | head -1 | sed 's/"iv":"//;s/"$//')
+    ENC_NOTIF=$(echo "${ENCRYPTED_JSON}" | grep -o '"encryptedNotif":"[^"]*"' | head -1 | sed 's/"encryptedNotif":"//;s/"$//')
+    ENC_NOTIF_IV=$(echo "${ENCRYPTED_JSON}" | grep -o '"notifIv":"[^"]*"' | head -1 | sed 's/"notifIv":"//;s/"$//')
+    SAFE_TITLE=$(_safe_json_string "${TITLE}")
+    BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"Open app to view details\",\"sessionId\":\"${SESSION_ID}\",\"encryptedPayload\":\"${ENC_PAYLOAD}\",\"iv\":\"${ENC_IV}\",\"encryptedNotif\":\"${ENC_NOTIF}\",\"notifIv\":\"${ENC_NOTIF_IV}\"}"
+  fi
 else
-  # Fallback: escape backslashes, quotes, tabs, and newlines
-  SAFE_TITLE=$(_safe_json_string "${TITLE}")
-  SAFE_MESSAGE=$(_safe_json_string "${MESSAGE}")
-  BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"${SAFE_MESSAGE}\",\"sessionId\":\"${SESSION_ID}\"}"
+  # Fallback: plaintext (no encryption key or Node.js not available)
+  if _has_jq; then
+    BODY=$(jq -n \
+      --arg type "${NOTIFICATION_TYPE}" \
+      --arg title "${TITLE}" \
+      --arg message "${MESSAGE}" \
+      --arg sessionId "${SESSION_ID}" \
+      '{type: $type, title: $title, message: $message, sessionId: $sessionId}')
+  else
+    SAFE_TITLE=$(_safe_json_string "${TITLE}")
+    SAFE_MESSAGE=$(_safe_json_string "${MESSAGE}")
+    BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"${SAFE_MESSAGE}\",\"sessionId\":\"${SESSION_ID}\"}"
+  fi
 fi
 
 log_debug "Sending notification to API..."
