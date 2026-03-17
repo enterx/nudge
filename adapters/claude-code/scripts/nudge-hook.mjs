@@ -308,8 +308,11 @@ async function main() {
     process.exit(0);
   }
 
-  // Track this event so PostToolUse can cancel it if the user bypassed via terminal
-  writePending(sessionId, eventId, apiUrl, token);
+  // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
+  // Only for PermissionRequest — AskUserQuestion (PreToolUse) has no PostToolUse cancel.
+  if (!isAskUser) {
+    writePending(sessionId, eventId, apiUrl, token);
+  }
 
   process.stderr.write(
     `Nudge: Waiting for approval on your phone... (event: ${eventId})\n`,
@@ -356,7 +359,9 @@ async function main() {
   clearPending(sessionId);
 
   if (action === 'approved' || action === 'approved_always') {
-    const isAlways = action === 'approved_always';
+    // "approved_always" is only valid for PermissionRequest (tool approvals).
+    // AskUserQuestion should never get "always allow" rules.
+    const isAlways = action === 'approved_always' && !isAskUser;
     process.stderr.write(
       isAlways ? 'Nudge: Approved (always allow)\n' : 'Nudge: Approved\n',
     );

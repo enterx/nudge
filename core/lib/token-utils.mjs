@@ -24,8 +24,8 @@ export function decodeJwtPayload(token) {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     let payload = parts[1];
-    const pad = 4 - (payload.length % 4);
-    if (pad < 4) payload += '='.repeat(pad);
+    const pad = (4 - (payload.length % 4)) % 4;
+    if (pad > 0) payload += '='.repeat(pad);
     return JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
   } catch {
     return null;
