@@ -236,7 +236,7 @@ async function main() {
     askUserQuestion = q.question || '';
     askUserMultiSelect = !!q.multiSelect;
     askUserOptions = (q.options || []).map((opt) => ({
-      value: opt.label,
+      value: opt.value || opt.label,
       label: opt.label,
       ...(opt.description && { description: opt.description }),
     }));
@@ -387,10 +387,9 @@ async function main() {
     }
 
     return exitWithOutput({
-      hookSpecificOutput: {
-        hookEventName,
-        decision: { behavior: 'allow' },
-      },
+      hookSpecificOutput: isAskUser
+        ? { hookEventName, permissionDecision: 'allow' }
+        : { hookEventName, decision: { behavior: 'allow' } },
     });
   } else if (action === 'answered' && isAskUser) {
     // AskUserQuestion: user answered on mobile — deny the terminal dialog

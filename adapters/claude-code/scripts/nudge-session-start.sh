@@ -1,7 +1,8 @@
 #!/bin/bash
 # nudge-session-start.sh — SessionStart hook for Claude Code
-# Reads askMode from config and injects context to tell Claude which
-# question tool to use (nudge_ask_user vs AskUserQuestion).
+# Reads askMode from config and injects context to confirm that
+# AskUserQuestion is routed via hooks to mobile (nudge mode)
+# or passes through to terminal (terminal mode).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
