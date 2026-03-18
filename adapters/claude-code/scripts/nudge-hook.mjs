@@ -339,8 +339,18 @@ async function main() {
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(sig, () => cancelAndExit(sig));
   }
-  process.stdin.on('close', () => cancelAndExit('stdin-close'));
-  process.stdin.on('end', () => cancelAndExit('stdin-end'));
+  // stdin-close/end: terminal answered (AskUserQuestion) or hook process ending.
+  // Do NOT cancel — only SIGINT/SIGTERM/SIGHUP indicate user-initiated cancellation.
+  // Sending 'cancelled' on stdin-close causes false cancellations when the terminal
+  // answers an AskUserQuestion before mobile.
+  process.stdin.on('close', () => {
+    hookLog('stdin-close — terminal answered or hook ending, not cancelling');
+    process.exit(0);
+  });
+  process.stdin.on('end', () => {
+    hookLog('stdin-end — terminal answered or hook ending, not cancelling');
+    process.exit(0);
+  });
   process.on('disconnect', () => cancelAndExit('disconnect'));
 
   hookLog(`waiting for decision, eventId=${eventId}`);
