@@ -76,12 +76,8 @@ async function main() {
       description: body || description,
       ...(sessionName && { sessionName }),
     });
-    // Use generic title to avoid leaking query/URL in plaintext FCM push
-    const safeTitle = toolName === 'WebSearch' ? 'Searching...'
-      : toolName === 'WebFetch' ? 'Fetching...'
-      : toolName;
     payload = {
-      title: safeTitle,
+      title: toolName,
       level: 'info',
       encryptedPayload: full.encryptedPayload,
       iv: full.iv,

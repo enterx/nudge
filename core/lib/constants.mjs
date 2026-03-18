@@ -7,6 +7,7 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 // --- Directories & paths ---
 
@@ -39,6 +40,25 @@ export const TOKEN_REFRESH_BUFFER_SECONDS = 300;
 // --- Identity ---
 
 export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
+
+// --- Session ---
+
+/**
+ * Derive a deterministic session ID from the host tool's environment.
+ * Both hooks and MCP server call this, so they always produce the same ID
+ * for the same Claude Code (or other tool) session.
+ *
+ * @param {string} [hookSessionId] - session_id from hook input (ignored; kept for signature compat)
+ * @returns {string}
+ */
+export function getSessionId(hookSessionId) {
+  // Claude Code: CLAUDE_CODE_SSE_PORT is unique per session, stable for its lifetime
+  if (process.env.CLAUDE_CODE_SSE_PORT) {
+    return `cc-${process.env.CLAUDE_CODE_SSE_PORT}`;
+  }
+  // Fallback: use hook-provided session_id or generate a random one
+  return hookSessionId || `session-${randomUUID()}`;
+}
 
 // --- MCP protocol ---
 

@@ -18,6 +18,7 @@ import {
   SERVER_NAME,
   SERVER_VERSION,
   PROTOCOL_VERSION,
+  getSessionId,
 } from './lib/constants.mjs';
 import { createLogger } from './lib/logger.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
@@ -25,11 +26,9 @@ import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
 import { encryptFields } from './lib/crypto.mjs';
-import { randomUUID } from 'node:crypto';
-
 const { log: debugLog } = createLogger('mcp-debug');
 
-const SESSION_ID = `claude-code-${randomUUID()}`;
+const SESSION_ID = getSessionId();
 
 // --- Input validation ---
 

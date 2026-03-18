@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-import { PROVIDER } from './lib/constants.mjs';
+import { PROVIDER, getSessionId } from './lib/constants.mjs';
 import { createLogger } from './lib/logger.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
@@ -28,22 +28,22 @@ const { log: hookLog } = createLogger('hook-debug');
 // Stores the current eventId so PostToolUse can cancel it if the user
 // responded via terminal (bypassing the mobile approval).
 
-function pendingFilePath(sessionId) {
-  return join(homedir(), '.nudge', `pending-${sessionId}.json`);
+function pendingFilePath(sessionId, eventId) {
+  return join(homedir(), '.nudge', `pending-${sessionId}-${eventId}.json`);
 }
 
 function writePending(sessionId, eventId, apiUrl, token) {
   try {
     writeFileSync(
-      pendingFilePath(sessionId),
+      pendingFilePath(sessionId, eventId),
       JSON.stringify({ eventId, apiUrl, token }),
       { mode: 0o600 },
     );
   } catch { /* best-effort */ }
 }
 
-function clearPending(sessionId) {
-  try { unlinkSync(pendingFilePath(sessionId)); } catch { /* ignore */ }
+function clearPending(sessionId, eventId) {
+  try { unlinkSync(pendingFilePath(sessionId, eventId)); } catch { /* ignore */ }
 }
 
 // --- Description builders ---
@@ -183,7 +183,7 @@ async function main() {
 
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
-  const sessionId = hookData.session_id || 'unknown';
+  const sessionId = getSessionId(hookData.session_id);
   const cwd = hookData.cwd;
   const transcriptPath = hookData.transcript_path;
 
@@ -191,17 +191,16 @@ async function main() {
     process.exit(0);
   }
 
-  // Detect which hook event triggered this script
+  // Detect AskUserQuestion — now handled via PermissionRequest (same as tool approvals)
+  // so both terminal UI and mobile approval run in parallel.
   const isAskUser = toolName === 'AskUserQuestion';
-  const hookEventName = isAskUser ? 'PreToolUse' : 'PermissionRequest';
+  const hookEventName = 'PermissionRequest';
 
   // Explicitly allow nudge's own commands
   if (shouldSkip(toolName, toolInput)) {
-    return exitWithOutput(
-      isAskUser
-        ? { hookSpecificOutput: { hookEventName, permissionDecision: 'allow' } }
-        : { hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } } },
-    );
+    return exitWithOutput({
+      hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } },
+    });
   }
 
   const config = readConfig();
@@ -309,13 +308,12 @@ async function main() {
   }
 
   // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
-  // Only for PermissionRequest — AskUserQuestion (PreToolUse) has no PostToolUse cancel.
-  if (!isAskUser) {
-    writePending(sessionId, eventId, apiUrl, token);
-  }
+  writePending(sessionId, eventId, apiUrl, token);
 
   process.stderr.write(
-    `Nudge: Waiting for approval on your phone... (event: ${eventId})\n`,
+    isAskUser
+      ? `Nudge: Question sent to your phone. Press Escape to answer here instead.\n`
+      : `Nudge: Waiting for approval on your phone... (event: ${eventId})\n`,
   );
 
   // Cancel event on the backend when the hook is interrupted (Escape / SIGINT).
@@ -325,7 +323,7 @@ async function main() {
     if (cancelRequested) return;
     cancelRequested = true;
     hookLog(`signal: ${signal}, cancelling eventId=${eventId}`);
-    clearPending(sessionId);
+    clearPending(sessionId, eventId);
     fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
       method: 'POST',
       headers: {
@@ -342,8 +340,13 @@ async function main() {
     process.on(sig, () => cancelAndExit(sig));
   }
   process.stdin.on('close', () => cancelAndExit('stdin-close'));
+  process.stdin.on('end', () => cancelAndExit('stdin-end'));
+  process.on('disconnect', () => cancelAndExit('disconnect'));
 
   hookLog(`waiting for decision, eventId=${eventId}`);
+
+  // Ensure stdin is resumed so 'close'/'end' events can fire.
+  process.stdin.resume();
 
   // Wait for decision via RTDB SSE streaming
   let decision;
@@ -392,9 +395,7 @@ async function main() {
     }
 
     return exitWithOutput({
-      hookSpecificOutput: isAskUser
-        ? { hookEventName, permissionDecision: 'allow' }
-        : { hookEventName, decision: { behavior: 'allow' } },
+      hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } },
     });
   } else if (action === 'answered' && isAskUser) {
     // AskUserQuestion: user answered on mobile — deny the terminal dialog
@@ -409,7 +410,10 @@ async function main() {
     return exitWithOutput({
       hookSpecificOutput: {
         hookEventName,
-        permissionDecision: 'deny',
+        decision: {
+          behavior: 'deny',
+          message: `Answered via Nudge: ${answerLabel}`,
+        },
         additionalContext: answerContext,
       },
     });
@@ -417,23 +421,14 @@ async function main() {
     const reason = decision.reason || 'No reason given';
     process.stderr.write(`Nudge: Denied — ${reason}\n`);
 
-    if (isAskUser) {
-      return exitWithOutput({
-        hookSpecificOutput: {
-          hookEventName,
-          permissionDecision: 'deny',
-          additionalContext: `User declined to answer: ${reason}`,
-        },
-      });
-    }
-
     return exitWithOutput({
       hookSpecificOutput: {
         hookEventName,
         decision: {
           behavior: 'deny',
-          message: `Denied via Nudge: ${reason}`,
+          message: isAskUser ? `Declined via Nudge: ${reason}` : `Denied via Nudge: ${reason}`,
         },
+        ...(isAskUser && { additionalContext: `User declined to answer: ${reason}` }),
       },
     });
   } else {

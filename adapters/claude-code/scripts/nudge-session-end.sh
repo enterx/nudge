@@ -1,6 +1,7 @@
 #!/bin/bash
 # nudge-session-end.sh — SessionEnd hook for Claude Code (async, fire-and-forget)
-# Sends a push notification when a Claude Code session ends.
+# Cancels pending events for this session. No push notification is sent
+# (session-end cards were noisy and not actionable).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
@@ -24,22 +25,8 @@ fi
 
 # --- Extract session data ---
 
-SESSION_ID=$(json_extract "${INPUT}" "session_id")
-REASON=$(json_extract "${INPUT}" "reason")
-
-# Map reason to human-readable message
-case "${REASON}" in
-  clear)
-    BODY="Session was cleared by user." ;;
-  logout)
-    BODY="User logged out." ;;
-  prompt_input_exit)
-    BODY="User exited the session." ;;
-  bypass_permissions_disabled)
-    BODY="Session ended — bypass permissions was disabled." ;;
-  *)
-    BODY="Session ended." ;;
-esac
+RAW_SESSION_ID=$(json_extract "${INPUT}" "session_id")
+SESSION_ID=$(get_session_id "${RAW_SESSION_ID}")
 
 # --- Cancel pending events for this session ---
 
@@ -54,25 +41,8 @@ if [ -n "${SESSION_ID}" ]; then
   log_debug "Cancelled ${CANCELLED} pending event(s) for session ${SESSION_ID}"
 fi
 
-# --- Send notification ---
-
-if _has_jq; then
-  EVENT_PAYLOAD=$(jq -n \
-    --arg body "${BODY}" \
-    '{
-      title: "Session ended",
-      body: $body,
-      level: "info"
-    }')
-else
-  SAFE_BODY=$(_safe_json_string "${BODY}")
-  EVENT_PAYLOAD="{\"title\":\"Session ended\",\"body\":\"${SAFE_BODY}\",\"level\":\"info\"}"
-fi
-
-api_post "pushNotifyFn" "${EVENT_PAYLOAD}" >/dev/null 2>&1 || true
-
 # Clean up stop cooldown file on session end
 rm -f "${NUDGE_CONFIG_DIR}/last_stop" 2>/dev/null || true
 
-log_debug "SessionEnd notification sent (reason: ${REASON})"
+log_debug "SessionEnd processed (no notification sent)"
 exit 0

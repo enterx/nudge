@@ -13,16 +13,6 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-hook.mjs",
-            "timeout": 86400
-          }
-        ]
-      },
-      {
         "matcher": "WebSearch|WebFetch",
         "hooks": [
           {
@@ -47,6 +37,19 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-cancel-pending.mjs",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
       {
         "matcher": ".*",
         "hooks": [

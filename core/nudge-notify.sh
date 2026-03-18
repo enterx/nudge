@@ -39,7 +39,8 @@ fi
 NOTIFICATION_TYPE=$(json_extract "${INPUT}" "notification_type")
 MESSAGE=$(json_extract "${INPUT}" "message")
 TITLE=$(json_extract "${INPUT}" "title")
-SESSION_ID=$(json_extract "${INPUT}" "session_id")
+RAW_SESSION_ID=$(json_extract "${INPUT}" "session_id")
+SESSION_ID=$(get_session_id "${RAW_SESSION_ID}")
 
 log_debug "Notification: type=${NOTIFICATION_TYPE} title=${TITLE}"
 

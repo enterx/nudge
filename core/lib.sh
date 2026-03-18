@@ -20,6 +20,21 @@ SSE_HEARTBEAT_TIMEOUT=60  # Consider connection dead if no data for 60s
 RETRY_MAX=3
 RETRY_DELAY_BASE=1     # Exponential backoff: 1s, 2s, 4s
 
+# --- Session ID ---
+
+# Derive a deterministic session ID from the host tool's environment.
+# Must match the logic in core/lib/constants.mjs:getSessionId().
+get_session_id() {
+  local hook_session_id="${1:-}"
+  if [ -n "${CLAUDE_CODE_SSE_PORT:-}" ]; then
+    echo "cc-${CLAUDE_CODE_SSE_PORT}"
+  elif [ -n "${hook_session_id}" ]; then
+    echo "${hook_session_id}"
+  else
+    echo "unknown"
+  fi
+}
+
 # --- Logging ---
 
 # Redact auth tokens / credentials from log messages
