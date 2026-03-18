@@ -48,16 +48,27 @@ export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
  * Both hooks and MCP server call this, so they always produce the same ID
  * for the same Claude Code (or other tool) session.
  *
- * @param {string} [hookSessionId] - session_id from hook input (ignored; kept for signature compat)
+ * Priority: NUDGE_SESSION_ID (persisted by SessionStart hook from Claude's
+ * session_id) → hook-provided session_id → cc-PORT fallback → random UUID.
+ *
+ * @param {string} [hookSessionId] - session_id from hook input
  * @returns {string}
  */
 export function getSessionId(hookSessionId) {
-  // Claude Code: CLAUDE_CODE_SSE_PORT is unique per session, stable for its lifetime
+  // SessionStart hook persists Claude's session_id as NUDGE_SESSION_ID
+  // so both hooks and MCP server use the same unique ID.
+  if (process.env.NUDGE_SESSION_ID) {
+    return process.env.NUDGE_SESSION_ID;
+  }
+  // Hook-provided session_id (available in hook calls but not MCP)
+  if (hookSessionId) {
+    return hookSessionId;
+  }
+  // Fallback: port-based (can be reused across sessions, but stable within one)
   if (process.env.CLAUDE_CODE_SSE_PORT) {
     return `cc-${process.env.CLAUDE_CODE_SSE_PORT}`;
   }
-  // Fallback: use hook-provided session_id or generate a random one
-  return hookSessionId || `session-${randomUUID()}`;
+  return `session-${randomUUID()}`;
 }
 
 // --- MCP protocol ---

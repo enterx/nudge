@@ -339,16 +339,19 @@ async function main() {
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(sig, () => cancelAndExit(sig));
   }
-  // stdin-close/end: terminal answered (AskUserQuestion) or hook process ending.
-  // Do NOT cancel — only SIGINT/SIGTERM/SIGHUP indicate user-initiated cancellation.
-  // Sending 'cancelled' on stdin-close causes false cancellations when the terminal
-  // answers an AskUserQuestion before mobile.
+  // stdin-close/end: terminal answered or another PermissionRequest took over.
+  // Do NOT cancel the backend event — only SIGINT/SIGTERM/SIGHUP mean user-initiated cancel.
+  // For AskUserQuestion: also clear the pending file so PostToolUse won't cancel the
+  // mobile event. This keeps the mobile card alive when cross-session PermissionRequest
+  // conflicts cause stdin-close (the user can still answer on their phone).
   process.stdin.on('close', () => {
-    hookLog('stdin-close — terminal answered or hook ending, not cancelling');
+    hookLog('stdin-close — not cancelling backend event');
+    if (isAskUser) clearPending(sessionId, eventId);
     process.exit(0);
   });
   process.stdin.on('end', () => {
-    hookLog('stdin-end — terminal answered or hook ending, not cancelling');
+    hookLog('stdin-end — not cancelling backend event');
+    if (isAskUser) clearPending(sessionId, eventId);
     process.exit(0);
   });
   process.on('disconnect', () => cancelAndExit('disconnect'));
