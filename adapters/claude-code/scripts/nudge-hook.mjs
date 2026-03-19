@@ -375,7 +375,7 @@ async function main() {
   const action = decision.action;
 
   // Mobile responded — clear pending file
-  clearPending(sessionId);
+  clearPending(sessionId, eventId);
 
   if (action === 'approved' || action === 'approved_always') {
     // "approved_always" is only valid for PermissionRequest (tool approvals).
@@ -414,22 +414,20 @@ async function main() {
       hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } },
     });
   } else if (action === 'answered' && isAskUser) {
-    // AskUserQuestion: user answered on mobile — deny the terminal dialog
+    // AskUserQuestion: user answered on mobile — allow the tool use
     // and inject the answer via additionalContext so Claude receives it.
+    // Using 'allow' (not 'deny') so Claude Code treats it as a valid response.
     const selected = decision.selectedOptions || [];
     const freeText = decision.reason || '';
     const answerLabel = selected.length > 0 ? selected.join(', ') : freeText || 'No answer';
     const questionText = askUserQuestion || 'question';
-    const answerContext = `User has answered your questions: "${questionText}"="${answerLabel}". You can now continue with the user's answers in mind.`;
+    const answerContext = `Answered via Nudge: ${answerLabel}`;
     process.stderr.write(`Nudge: User answered — ${answerLabel}\n`);
 
     return exitWithOutput({
       hookSpecificOutput: {
         hookEventName,
-        decision: {
-          behavior: 'deny',
-          message: `Answered via Nudge: ${answerLabel}`,
-        },
+        decision: { behavior: 'allow' },
         additionalContext: answerContext,
       },
     });
