@@ -28,7 +28,21 @@ import { waitForDecision } from './lib/sse.mjs';
 import { encryptFields } from './lib/crypto.mjs';
 const { log: debugLog } = createLogger('mcp-debug');
 
-const SESSION_ID = getSessionId();
+// Lazy: SessionStart hook may write ~/.nudge/session_id after MCP starts.
+// Keep trying until the file-based ID is found, then cache it.
+let cachedSessionId = null;
+let sessionIdResolved = false;
+function getSessionIdLazy() {
+  if (sessionIdResolved) return cachedSessionId;
+  const id = getSessionId();
+  cachedSessionId = id;
+  // Only lock the cache once we got a file-based or hook-based ID
+  // (not a cc-PORT fallback that could be stale from a prior session)
+  if (!id.startsWith('cc-') && !id.startsWith('session-')) {
+    sessionIdResolved = true;
+  }
+  return id;
+}
 
 // --- Input validation ---
 
@@ -154,7 +168,7 @@ async function handleNudgeAskUser(args, requestId) {
       provider: PROVIDER,
       toolName: 'nudge_ask_user',
       pattern: 'elicitation',
-      sessionId: SESSION_ID,
+      sessionId: getSessionIdLazy(),
       options,
       multiSelect,
       ...(encrypted
@@ -225,7 +239,7 @@ async function handleNudgeApprove(args, requestId) {
       provider: PROVIDER,
       toolName,
       pattern: 'approval',
-      sessionId: SESSION_ID,
+      sessionId: getSessionIdLazy(),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -302,7 +316,7 @@ async function handleNudgeNotify(args) {
     {
       title,
       level,
-      sessionId: SESSION_ID,
+      sessionId: getSessionIdLazy(),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,

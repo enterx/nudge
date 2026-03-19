@@ -11,19 +11,17 @@ source "${SCRIPT_DIR}/lib.sh"
 # Read stdin to extract session_id (hook protocol sends JSON on stdin)
 STDIN_DATA="$(cat)"
 
-# Persist Claude Code's session_id so MCP server can use the same ID.
-# CLAUDE_ENV_FILE is only available during SessionStart; writing here
-# makes the var available for the rest of the session.
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  if _has_jq; then
-    HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | jq -r '.session_id // empty' 2>/dev/null)
-  else
-    # Lightweight extraction without jq
-    HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-  fi
-  if [ -n "${HOOK_SESSION_ID}" ]; then
-    echo "NUDGE_SESSION_ID=${HOOK_SESSION_ID}" >> "${CLAUDE_ENV_FILE}"
-  fi
+# Persist Claude Code's session_id to ~/.nudge/session_id so both hooks
+# and the MCP server (which starts before CLAUDE_ENV_FILE vars are applied)
+# can read the same unique session ID.
+if _has_jq; then
+  HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | jq -r '.session_id // empty' 2>/dev/null)
+else
+  # Lightweight extraction without jq
+  HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+fi
+if [ -n "${HOOK_SESSION_ID}" ]; then
+  echo -n "${HOOK_SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id"
 fi
 
 # --- Check if configured ---
