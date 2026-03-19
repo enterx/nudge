@@ -8,13 +8,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# Read stdin and extract session_id for MCP server coordination.
-# Uses grep+cut (no jq) to keep startup fast.
+# Read stdin (required by hook protocol) and persist session_id in background
+# so it doesn't block startup. MCP server reads this file lazily.
 STDIN_DATA="$(cat)"
-HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-if [ -n "${HOOK_SESSION_ID}" ]; then
-  echo -n "${HOOK_SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id"
-fi
+{
+  SID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+  [ -n "${SID}" ] && echo -n "${SID}" > "${NUDGE_CONFIG_DIR}/session_id"
+} &
 
 # --- Check if configured ---
 
