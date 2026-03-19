@@ -8,13 +8,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# Read stdin (required by hook protocol) and persist session_id in background
-# so it doesn't block startup. MCP server reads this file lazily.
+# Read stdin (required by hook protocol) and persist session_id.
+# Uses bash built-in string ops only (no grep/cut/jq) for speed.
 STDIN_DATA="$(cat)"
-{
-  SID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-  [ -n "${SID}" ] && echo -n "${SID}" > "${NUDGE_CONFIG_DIR}/session_id"
-} &
+if [[ "${STDIN_DATA}" =~ \"session_id\":\"([^\"]+)\" ]]; then
+  echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id"
+fi
 
 # --- Check if configured ---
 
