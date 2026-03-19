@@ -32,11 +32,11 @@ function pendingFilePath(sessionId, eventId) {
   return join(homedir(), '.nudge', `pending-${sessionId}-${eventId}.json`);
 }
 
-function writePending(sessionId, eventId, apiUrl, token) {
+function writePending(sessionId, eventId, apiUrl, token, pattern) {
   try {
     writeFileSync(
       pendingFilePath(sessionId, eventId),
-      JSON.stringify({ eventId, apiUrl, token }),
+      JSON.stringify({ eventId, apiUrl, token, pattern }),
       { mode: 0o600 },
     );
   } catch { /* best-effort */ }
@@ -311,7 +311,8 @@ async function main() {
   }
 
   // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
-  writePending(sessionId, eventId, apiUrl, token);
+  const eventPattern = isAskUser ? 'elicitation' : 'approval';
+  writePending(sessionId, eventId, apiUrl, token, eventPattern);
 
   process.stderr.write(
     isAskUser
@@ -344,17 +345,14 @@ async function main() {
   }
   // stdin-close/end: terminal answered or another PermissionRequest took over.
   // Do NOT cancel the backend event — only SIGINT/SIGTERM/SIGHUP mean user-initiated cancel.
-  // For AskUserQuestion: also clear the pending file so PostToolUse won't cancel the
-  // mobile event. This keeps the mobile card alive when cross-session PermissionRequest
-  // conflicts cause stdin-close (the user can still answer on their phone).
+  // Leave the pending file intact so PostToolUse can resolve the event with the
+  // actual tool_response data (e.g., AskUserQuestion answers).
   process.stdin.on('close', () => {
-    hookLog('stdin-close — not cancelling backend event');
-    if (isAskUser) clearPending(sessionId, eventId);
+    hookLog('stdin-close — leaving pending for PostToolUse');
     process.exit(0);
   });
   process.stdin.on('end', () => {
-    hookLog('stdin-end — not cancelling backend event');
-    if (isAskUser) clearPending(sessionId, eventId);
+    hookLog('stdin-end — leaving pending for PostToolUse');
     process.exit(0);
   });
   process.on('disconnect', () => cancelAndExit('disconnect'));
