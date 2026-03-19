@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-import { PROVIDER, getSessionId } from './lib/constants.mjs';
+import { PROVIDER, SESSION_ID_PATH, getSessionId } from './lib/constants.mjs';
 import { createLogger } from './lib/logger.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
@@ -184,6 +184,9 @@ async function main() {
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
   const sessionId = getSessionId(hookData.session_id);
+  // Persist session_id to file so MCP server can read the same ID.
+  // Write on every call (cheap) to ensure the file exists for MCP.
+  try { writeFileSync(SESSION_ID_PATH, sessionId); } catch { /* ignore */ }
   const cwd = hookData.cwd;
   const transcriptPath = hookData.transcript_path;
 

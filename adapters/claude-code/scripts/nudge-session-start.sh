@@ -8,21 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# Read stdin to extract session_id (hook protocol sends JSON on stdin)
-STDIN_DATA="$(cat)"
-
-# Persist Claude Code's session_id to ~/.nudge/session_id so both hooks
-# and the MCP server (which starts before CLAUDE_ENV_FILE vars are applied)
-# can read the same unique session ID.
-if _has_jq; then
-  HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | jq -r '.session_id // empty' 2>/dev/null)
-else
-  # Lightweight extraction without jq
-  HOOK_SESSION_ID=$(echo "${STDIN_DATA}" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-fi
-if [ -n "${HOOK_SESSION_ID}" ]; then
-  echo -n "${HOOK_SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id"
-fi
+# Consume stdin (hook protocol requires it)
+cat > /dev/null
 
 # --- Check if configured ---
 
