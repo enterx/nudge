@@ -19,7 +19,14 @@ export const CONFIG_PATH =
   process.env.NUDGE_CONFIG_PATH || join(NUDGE_CONFIG_DIR, 'config');
 
 export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
-export const SESSION_ID_PATH = join(NUDGE_CONFIG_DIR, 'session_id');
+
+// Per-session file: session_id.{PORT} to avoid cross-session overwrites.
+// Falls back to 'session_id' if no port is available.
+const portSuffix = process.env.CLAUDE_CODE_SSE_PORT || '';
+export const SESSION_ID_PATH = join(
+  NUDGE_CONFIG_DIR,
+  portSuffix ? `session_id.${portSuffix}` : 'session_id',
+);
 
 // --- API ---
 
@@ -47,30 +54,28 @@ export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
 
 /**
  * Derive a deterministic session ID from the host tool's environment.
- * Both hooks and MCP server call this, so they always produce the same ID
- * for the same Claude Code (or other tool) session.
  *
- * Priority: ~/.nudge/session_id file (written by SessionStart hook) →
- * hook-provided session_id → cc-PORT fallback → random UUID.
+ * Priority: hook-provided session_id (always unique per session) →
+ * per-port file (written by SessionStart/PermissionRequest hook for MCP) →
+ * cc-PORT fallback → random UUID.
  *
- * The file-based approach works because the MCP server starts before
- * CLAUDE_ENV_FILE vars are available, but can read files at any time.
+ * Hooks always receive session_id from Claude Code, so they use that directly.
+ * MCP server has no hook input, so it reads from the per-port file.
  *
  * @param {string} [hookSessionId] - session_id from hook input
  * @returns {string}
  */
 export function getSessionId(hookSessionId) {
-  // SessionStart hook writes Claude's session_id to ~/.nudge/session_id
-  // so both hooks and MCP server read the same unique ID.
+  // Hooks always have session_id — use it directly (no file read needed)
+  if (hookSessionId) {
+    return hookSessionId;
+  }
+  // MCP server: read from per-port file (written by hooks)
   try {
     const fileId = readFileSync(SESSION_ID_PATH, 'utf8').trim();
     if (fileId) return fileId;
   } catch {
     // File doesn't exist yet or read error — fall through
-  }
-  // Hook-provided session_id (available in hook calls but not MCP)
-  if (hookSessionId) {
-    return hookSessionId;
   }
   // Fallback: port-based (can be reused across sessions, but stable within one)
   if (process.env.CLAUDE_CODE_SSE_PORT) {

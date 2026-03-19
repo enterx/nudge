@@ -41,8 +41,12 @@ if [ -n "${SESSION_ID}" ]; then
   log_debug "Cancelled ${CANCELLED} pending event(s) for session ${SESSION_ID}"
 fi
 
-# Clean up stop cooldown file on session end
+# Clean up per-session files
 rm -f "${NUDGE_CONFIG_DIR}/last_stop" 2>/dev/null || true
+PORT_SUFFIX="${CLAUDE_CODE_SSE_PORT:-}"
+if [ -n "${PORT_SUFFIX}" ]; then
+  rm -f "${NUDGE_CONFIG_DIR}/session_id.${PORT_SUFFIX}" 2>/dev/null || true
+fi
 
 log_debug "SessionEnd processed (no notification sent)"
 exit 0

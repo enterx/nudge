@@ -8,11 +8,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# Read stdin (required by hook protocol) and persist session_id.
-# Uses bash built-in string ops only (no grep/cut/jq) for speed.
+# Read stdin (required by hook protocol) and persist session_id to a
+# per-port file so concurrent sessions don't overwrite each other.
 STDIN_DATA="$(cat)"
 if [[ "${STDIN_DATA}" =~ \"session_id\":\"([^\"]+)\" ]]; then
-  echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id"
+  PORT_SUFFIX="${CLAUDE_CODE_SSE_PORT:-}"
+  if [ -n "${PORT_SUFFIX}" ]; then
+    echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id.${PORT_SUFFIX}"
+  else
+    echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id"
+  fi
 fi
 
 # --- Check if configured ---

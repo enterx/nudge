@@ -24,10 +24,22 @@ RETRY_DELAY_BASE=1     # Exponential backoff: 1s, 2s, 4s
 
 # Derive a deterministic session ID from the host tool's environment.
 # Must match the logic in core/lib/constants.mjs:getSessionId().
-# Priority: ~/.nudge/session_id file → hook session_id → cc-PORT → unknown
+# Priority: hook session_id → per-port file → cc-PORT → unknown
 get_session_id() {
   local hook_session_id="${1:-}"
-  local session_id_file="${NUDGE_CONFIG_DIR}/session_id"
+  # Hooks always have session_id — use it directly
+  if [ -n "${hook_session_id}" ]; then
+    echo "${hook_session_id}"
+    return
+  fi
+  # Read from per-port file (for scripts without hook input)
+  local port="${CLAUDE_CODE_SSE_PORT:-}"
+  local session_id_file
+  if [ -n "${port}" ]; then
+    session_id_file="${NUDGE_CONFIG_DIR}/session_id.${port}"
+  else
+    session_id_file="${NUDGE_CONFIG_DIR}/session_id"
+  fi
   if [ -f "${session_id_file}" ]; then
     local file_id
     file_id="$(cat "${session_id_file}" 2>/dev/null)"
@@ -36,10 +48,8 @@ get_session_id() {
       return
     fi
   fi
-  if [ -n "${hook_session_id}" ]; then
-    echo "${hook_session_id}"
-  elif [ -n "${CLAUDE_CODE_SSE_PORT:-}" ]; then
-    echo "cc-${CLAUDE_CODE_SSE_PORT}"
+  if [ -n "${port}" ]; then
+    echo "cc-${port}"
   else
     echo "unknown"
   fi
