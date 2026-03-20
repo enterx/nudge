@@ -14,11 +14,8 @@ source "${SCRIPT_DIR}/lib.sh"
 STDIN_DATA="$(cat)"
 if [[ "${STDIN_DATA}" =~ \"session_id\":\"([^\"]+)\" ]]; then
   SESSION_ID="${BASH_REMATCH[1]}"
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] SessionStart: session_id=${SESSION_ID}, PPID=${PPID}" >> "${NUDGE_CONFIG_DIR}/hook-debug.log" 2>/dev/null
   # Write PPID-keyed file (primary) — matches what MCP server reads via process.ppid
   echo -n "${SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id.${PPID}"
-else
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] SessionStart: no session_id found in stdin" >> "${NUDGE_CONFIG_DIR}/hook-debug.log" 2>/dev/null
 fi
 
 # --- Check if configured ---

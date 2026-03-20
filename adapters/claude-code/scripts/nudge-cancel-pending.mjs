@@ -11,21 +11,35 @@
  *
  * When a user denies a tool via Terminal (No/Escape), Claude Code does NOT fire
  * PostToolUse/PostToolUseFailure for that tool. The pending file survives until
- * the next tool's PostToolUse picks it up. We detect this via toolUseId mismatch
- * and correctly mark the stale event as "denied".
+ * it is cleaned up. Two-tier cleanup strategy:
+ *   1. PostToolUse matches its own pending file by toolUseId or toolInputHash
+ *      and resolves it. Non-matching pending files are LEFT IN PLACE.
+ *   2. The next PermissionRequest hook cleans up ALL remaining pending files
+ *      as "denied" (orphan cleanup) — since any approved tool's pending file
+ *      would have been resolved by its own PostToolUse already.
  *
  * Scans for all pending-{sessionId}-*.json files to support parallel tool calls.
  * Runs async so it never blocks tool execution.
  * Dependencies: None (Node.js built-ins only)
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { createLogger } from './lib/logger.mjs';
 import { getSessionId } from './lib/constants.mjs';
 
-const { log } = createLogger('hook-debug');
+function hashToolInput(input, toolName) {
+  if (!input) return '';
+  let obj = input;
+  // AskUserQuestion: PostToolUse adds answers/annotations to tool_input
+  // that weren't present at PermissionRequest time. Strip them to match.
+  if (toolName === 'AskUserQuestion') {
+    const { answers, annotations, ...rest } = obj;
+    obj = rest;
+  }
+  return createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
+}
 
 /**
  * Extract the user's answer from AskUserQuestion tool_response.
@@ -81,6 +95,7 @@ async function main() {
   const hookEventName = hookData.hook_event_name;
   const isFailure = hookEventName === 'PostToolUseFailure';
   const currentToolUseId = hookData.tool_use_id;
+  const currentToolInputHash = hashToolInput(hookData.tool_input, hookData.tool_name);
 
   const sessionId = getSessionId(hookData.session_id);
   const nudgeDir = join(homedir(), '.nudge');
@@ -109,23 +124,34 @@ async function main() {
         return;
       }
 
-      const { eventId, apiUrl, token, pattern, toolUseId } = pending;
+      const { eventId, apiUrl, token, pattern, toolUseId, toolInputHash: pendingToolInputHash } = pending;
       if (!eventId || !apiUrl || !token) return;
 
-      // Delete file first to avoid duplicate responses
-      try { unlinkSync(filePath); } catch { /* ignore */ }
+      // --- Matching logic ---
+      // Two-tier strategy:
+      //   1. toolUseId match (when available — e.g. PreToolUse hooks)
+      //   2. toolInputHash match (fallback for PermissionRequest which lacks tool_use_id)
+      // Non-matching pending files are NOT resolved here — they are cleaned up
+      // by the next PermissionRequest hook (orphan cleanup).
 
-      // Check if this pending file belongs to the current tool execution.
-      // When a user denies a tool in the terminal (No/Escape), Claude Code does
-      // NOT fire PostToolUse/PostToolUseFailure for that tool. The pending file
-      // remains until the NEXT tool's PostToolUse picks it up. In that case,
-      // toolUseId won't match → the original tool was denied/cancelled.
-      const isStaleEvent = toolUseId && currentToolUseId && toolUseId !== currentToolUseId;
+      const isStaleByToolId = toolUseId && currentToolUseId && toolUseId !== currentToolUseId;
+      const isHashMatch = pendingToolInputHash && currentToolInputHash && pendingToolInputHash === currentToolInputHash;
+      const isToolIdMatch = toolUseId && currentToolUseId && toolUseId === currentToolUseId;
+
+      // Determine if this pending file belongs to the current tool
+      const isCurrentTool = isToolIdMatch || (!toolUseId && isHashMatch);
+
+      if (!isCurrentTool && !isStaleByToolId) {
+        return;
+      }
+
+      // Delete pending file before resolving to avoid duplicate responses
+      try { unlinkSync(filePath); } catch { /* ignore */ }
 
       // Determine the correct action and payload
       let body;
-      if (isStaleEvent) {
-        // This pending file is from a previously denied/escaped tool
+      if (isStaleByToolId) {
+        // toolUseId mismatch — definitely stale
         body = { action: 'denied', reason: 'Denied in terminal' };
       } else if (pattern === 'elicitation') {
         const answerData = extractAskUserAnswer(hookData);
@@ -140,7 +166,6 @@ async function main() {
         body = { action: 'approved', reason: 'Approved in terminal' };
       }
 
-      log(`PostToolUse: resolving event ${eventId} as ${body.action}`);
       try {
         await fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
           method: 'POST',
@@ -151,10 +176,7 @@ async function main() {
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(5_000),
         });
-        log(`PostToolUse: event ${eventId} resolved as ${body.action}`);
-      } catch (err) {
-        log(`PostToolUse: resolve failed for ${eventId}: ${err.message}`);
-      }
+      } catch { /* best-effort */ }
     }),
   );
 }

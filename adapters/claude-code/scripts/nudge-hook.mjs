@@ -9,20 +9,18 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 import { PROVIDER, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
-import { createLogger } from './lib/logger.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
 import { encryptFields } from './lib/crypto.mjs';
-
-const { log: hookLog } = createLogger('hook-debug');
 
 // --- Pending event tracking ---
 // Stores the current eventId so PostToolUse can cancel it if the user
@@ -32,11 +30,14 @@ function pendingFilePath(sessionId, eventId) {
   return join(homedir(), '.nudge', `pending-${sessionId}-${eventId}.json`);
 }
 
-function writePending(sessionId, eventId, apiUrl, token, pattern, toolUseId, toolName) {
+function writePending(sessionId, eventId, apiUrl, token, pattern, toolUseId, toolName, toolInput) {
+  const toolInputHash = toolInput
+    ? createHash('sha256').update(JSON.stringify(toolInput)).digest('hex').slice(0, 16)
+    : '';
   try {
     writeFileSync(
       pendingFilePath(sessionId, eventId),
-      JSON.stringify({ eventId, apiUrl, token, pattern, toolUseId, toolName }),
+      JSON.stringify({ eventId, apiUrl, token, pattern, toolUseId, toolName, toolInputHash, createdAt: Date.now() }),
       { mode: 0o600 },
     );
   } catch { /* best-effort */ }
@@ -184,7 +185,7 @@ async function main() {
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
   const sessionId = getSessionId(hookData.session_id);
-  hookLog(`sessionId resolved: hookData.session_id=${hookData.session_id}, result=${sessionId}, PPID=${process.ppid}, SESSION_ID_PATH=${SESSION_ID_PATH}`);
+
   // Persist session_id to PPID-keyed file so MCP server can read the same ID.
   // Both hooks and MCP server share the same parent (Claude Code process),
   // so process.ppid is the unique key.
@@ -228,9 +229,10 @@ async function main() {
 
   const apiUrl = getApiUrl(config);
 
-  // --- Clean up orphaned elicitation events from previous Escape/SIGKILL ---
-  // When AskUserQuestion is Escaped, SIGKILL prevents cleanup. The pending file
-  // remains on disk. Cancel these orphaned events now before creating a new one.
+  // --- Clean up ALL orphaned pending events ---
+  // When a new PermissionRequest fires, any remaining pending files are from
+  // previously denied/escaped tools (approved tools are resolved by PostToolUse
+  // or SSE before the next PermissionRequest fires). Mark them as denied.
   try {
     const nudgeDir = join(homedir(), '.nudge');
     const prefix = `pending-${sessionId}-`;
@@ -241,9 +243,8 @@ async function main() {
       const filePath = join(nudgeDir, file);
       try {
         const pending = JSON.parse(readFileSync(filePath, 'utf-8'));
-        if (pending.pattern !== 'elicitation') continue;
-        // Cancel on server (fire-and-forget)
-        hookLog(`cleaning orphaned elicitation event: ${pending.eventId}`);
+        const action = pending.pattern === 'elicitation' ? 'cancelled' : 'denied';
+        const reason = pending.pattern === 'elicitation' ? 'Cancelled (orphaned)' : 'Denied in terminal';
         unlinkSync(filePath);
         fetch(`${apiUrl}/eventsRespond/${pending.eventId}/respond`, {
           method: 'POST',
@@ -251,7 +252,7 @@ async function main() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${pending.token}`,
           },
-          body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled (orphaned)' }),
+          body: JSON.stringify({ action, reason }),
           signal: AbortSignal.timeout(5_000),
         }).catch(() => {});
       } catch { /* ignore individual file errors */ }
@@ -354,7 +355,7 @@ async function main() {
 
   // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
   const eventPattern = isAskUser ? 'elicitation' : 'approval';
-  writePending(sessionId, eventId, apiUrl, token, eventPattern, hookData.tool_use_id, toolName);
+  writePending(sessionId, eventId, apiUrl, token, eventPattern, hookData.tool_use_id, toolName, toolInput);
 
   process.stderr.write(
     isAskUser
@@ -368,7 +369,6 @@ async function main() {
   const cancelAndExit = (signal) => {
     if (cancelRequested) return;
     cancelRequested = true;
-    hookLog(`signal: ${signal}, cancelling eventId=${eventId}`);
     clearPending(sessionId, eventId);
     fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
       method: 'POST',
@@ -390,16 +390,12 @@ async function main() {
   // Leave the pending file intact so PostToolUse can resolve the event with the
   // actual tool_response data (e.g., AskUserQuestion answers).
   process.stdin.on('close', () => {
-    hookLog('stdin-close — leaving pending for PostToolUse');
     process.exit(0);
   });
   process.stdin.on('end', () => {
-    hookLog('stdin-end — leaving pending for PostToolUse');
     process.exit(0);
   });
   process.on('disconnect', () => cancelAndExit('disconnect'));
-
-  hookLog(`waiting for decision, eventId=${eventId}`);
 
   // Ensure stdin is resumed so 'close'/'end' events can fire.
   process.stdin.resume();
