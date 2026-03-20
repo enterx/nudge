@@ -213,16 +213,19 @@ async function main() {
 
   const config = readConfig();
   if (!config) {
+    process.stderr.write('Nudge: no config found — skipping hook, falling back to built-in prompt\n');
     process.exit(0);
   }
 
   // Terminal mode — skip Nudge, fall back to built-in approval prompt
   if (config.askMode === 'terminal') {
+    process.stderr.write('Nudge: askMode is "terminal" — skipping hook, falling back to built-in prompt\n');
     process.exit(0);
   }
 
   const token = await getValidToken(config);
   if (!token) {
+    process.stderr.write('Nudge: no valid token — skipping hook, falling back to built-in prompt\n');
     process.exit(0);
   }
 
