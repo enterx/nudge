@@ -24,7 +24,9 @@ RETRY_DELAY_BASE=1     # Exponential backoff: 1s, 2s, 4s
 
 # Derive a deterministic session ID from the host tool's environment.
 # Must match the logic in core/lib/constants.mjs:getSessionId().
-# Priority: hook session_id → per-port file → cc-PORT → unknown
+# Priority: hook session_id → per-PPID file → unknown
+# Uses PPID (parent PID = Claude Code process) as key to avoid
+# cross-session overwrites when multiple sessions share a port.
 get_session_id() {
   local hook_session_id="${1:-}"
   # Hooks always have session_id — use it directly
@@ -32,11 +34,11 @@ get_session_id() {
     echo "${hook_session_id}"
     return
   fi
-  # Read from per-port file (for scripts without hook input)
-  local port="${CLAUDE_CODE_SSE_PORT:-}"
+  # Read from PPID-keyed file (for scripts without hook input)
+  local ppid_key="${PPID:-}"
   local session_id_file
-  if [ -n "${port}" ]; then
-    session_id_file="${NUDGE_CONFIG_DIR}/session_id.${port}"
+  if [ -n "${ppid_key}" ]; then
+    session_id_file="${NUDGE_CONFIG_DIR}/session_id.${ppid_key}"
   else
     session_id_file="${NUDGE_CONFIG_DIR}/session_id"
   fi
@@ -48,11 +50,7 @@ get_session_id() {
       return
     fi
   fi
-  if [ -n "${port}" ]; then
-    echo "cc-${port}"
-  else
-    echo "unknown"
-  fi
+  echo "unknown"
 }
 
 # --- Logging ---

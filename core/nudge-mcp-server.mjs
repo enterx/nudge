@@ -148,7 +148,6 @@ async function handleNudgeAskUser(args, requestId) {
     toolInput: { question, options, multiSelect },
     description: question,
     ...(context && { context }),
-    ...(sessionName && { sessionName }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -160,6 +159,7 @@ async function handleNudgeAskUser(args, requestId) {
       toolName: 'nudge_ask_user',
       pattern: 'elicitation',
       sessionId: getSessionIdLazy(),
+      ...(sessionName && { sessionName }),
       options,
       multiSelect,
       ...(encrypted
@@ -219,7 +219,6 @@ async function handleNudgeApprove(args, requestId) {
     description,
     ...(context && { context }),
     ...(cwd && { cwd }),
-    ...(sessionName && { sessionName }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -231,6 +230,7 @@ async function handleNudgeApprove(args, requestId) {
       toolName,
       pattern: 'approval',
       sessionId: getSessionIdLazy(),
+      ...(sessionName && { sessionName }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -297,7 +297,6 @@ async function handleNudgeNotify(args) {
     toolInput: {},
     description: body,
     ...(context && { context }),
-    ...(sessionName && { sessionName }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -308,6 +307,7 @@ async function handleNudgeNotify(args) {
       title,
       level,
       sessionId: getSessionIdLazy(),
+      ...(sessionName && { sessionName }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,

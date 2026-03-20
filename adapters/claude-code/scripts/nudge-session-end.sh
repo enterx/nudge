@@ -43,10 +43,8 @@ fi
 
 # Clean up per-session files
 rm -f "${NUDGE_CONFIG_DIR}/last_stop" 2>/dev/null || true
-PORT_SUFFIX="${CLAUDE_CODE_SSE_PORT:-}"
-if [ -n "${PORT_SUFFIX}" ]; then
-  rm -f "${NUDGE_CONFIG_DIR}/session_id.${PORT_SUFFIX}" 2>/dev/null || true
-fi
+# Remove PPID-keyed session_id file
+rm -f "${NUDGE_CONFIG_DIR}/session_id.${PPID}" 2>/dev/null || true
 
 log_debug "SessionEnd processed (no notification sent)"
 exit 0

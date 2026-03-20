@@ -184,15 +184,11 @@ async function main() {
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
   const sessionId = getSessionId(hookData.session_id);
-  hookLog(`sessionId resolved: hookData.session_id=${hookData.session_id}, result=${sessionId}, SESSION_ID_PATH=${SESSION_ID_PATH}`);
-  // Persist session_id to file so MCP server can read the same ID.
-  // Write to both port-specific AND generic file — MCP may not have
-  // CLAUDE_CODE_SSE_PORT in its environment, so it reads the generic one.
+  hookLog(`sessionId resolved: hookData.session_id=${hookData.session_id}, result=${sessionId}, PPID=${process.ppid}, SESSION_ID_PATH=${SESSION_ID_PATH}`);
+  // Persist session_id to PPID-keyed file so MCP server can read the same ID.
+  // Both hooks and MCP server share the same parent (Claude Code process),
+  // so process.ppid is the unique key.
   try { writeFileSync(SESSION_ID_PATH, sessionId); } catch { /* ignore */ }
-  const genericPath = join(homedir(), '.nudge', 'session_id');
-  if (SESSION_ID_PATH !== genericPath) {
-    try { writeFileSync(genericPath, sessionId); } catch { /* ignore */ }
-  }
   const cwd = hookData.cwd;
   const transcriptPath = hookData.transcript_path;
 
@@ -265,7 +261,8 @@ async function main() {
   // Build event payload
   const description = buildDescription(toolName, toolInput);
   const sanitizedInput = buildToolInput(toolInput);
-  const sessionName = extractSessionName(transcriptPath);
+  const sessionName = extractSessionName(transcriptPath)
+    || (cwd ? cwd.split('/').filter(Boolean).pop() : null);
 
   // --- AskUserQuestion: send as elicitation, return answer via additionalContext ---
   let askUserQuestion = null;
@@ -287,7 +284,6 @@ async function main() {
     toolInput: isAskUser ? {} : sanitizedInput,
     description: isAskUser ? askUserQuestion || description : description,
     ...(cwd && { cwd }),
-    ...(sessionName && { sessionName }),
   };
   const encrypted = encryptSensitiveFields(config, sensitiveFields);
 
@@ -296,6 +292,7 @@ async function main() {
     toolName,
     pattern: isAskUser ? 'elicitation' : 'approval',
     sessionId,
+    ...(sessionName && { sessionName }),
     ...(isAskUser && askUserOptions && { options: askUserOptions }),
     ...(isAskUser && { multiSelect: askUserMultiSelect }),
     ...(encrypted
