@@ -20,12 +20,14 @@ export const CONFIG_PATH =
 
 export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
-// Per-session file: session_id.{PORT} to avoid cross-session overwrites.
-// Falls back to 'session_id' if no port is available.
-const portSuffix = process.env.CLAUDE_CODE_SSE_PORT || '';
+// Per-session file keyed by parent PID (= Claude Code process PID).
+// Both hooks and MCP server are spawned by the same Claude Code process,
+// so process.ppid is the shared unique key. This avoids the port-reuse
+// problem where multiple sessions share CLAUDE_CODE_SSE_PORT.
+const ppid = process.ppid || '';
 export const SESSION_ID_PATH = join(
   NUDGE_CONFIG_DIR,
-  portSuffix ? `session_id.${portSuffix}` : 'session_id',
+  ppid ? `session_id.${ppid}` : 'session_id',
 );
 
 // --- API ---

@@ -184,6 +184,7 @@ async function main() {
   const toolName = hookData.tool_name;
   const toolInput = hookData.tool_input || {};
   const sessionId = getSessionId(hookData.session_id);
+  hookLog(`sessionId resolved: hookData.session_id=${hookData.session_id}, result=${sessionId}, SESSION_ID_PATH=${SESSION_ID_PATH}`);
   // Persist session_id to file so MCP server can read the same ID.
   // Write to both port-specific AND generic file — MCP may not have
   // CLAUDE_CODE_SSE_PORT in its environment, so it reads the generic one.
@@ -450,20 +451,27 @@ async function main() {
       hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } },
     });
   } else if (action === 'answered' && isAskUser) {
-    // AskUserQuestion: user answered on mobile — allow the tool use
-    // and inject the answer via additionalContext so Claude receives it.
-    // Using 'allow' (not 'deny') so Claude Code treats it as a valid response.
+    // AskUserQuestion: user answered on mobile — deny the terminal dialog
+    // so it doesn't open, and pass the answer via message + additionalContext.
+    // 'deny' prevents the terminal prompt from appearing (user is on mobile).
+    // The message field content is shown to Claude as the denial reason,
+    // and additionalContext is injected into the conversation context.
+    // Previous bugs that caused deny to fail (clearPending, cross-session)
+    // have been fixed, so deny is now reliable.
     const selected = decision.selectedOptions || [];
     const freeText = decision.reason || '';
     const answerLabel = selected.length > 0 ? selected.join(', ') : freeText || 'No answer';
     const questionText = askUserQuestion || 'question';
-    const answerContext = `Answered via Nudge: ${answerLabel}`;
+    const answerContext = `User has answered your questions: "${questionText}"="${answerLabel}". You can now continue with the user's answers in mind.`;
     process.stderr.write(`Nudge: User answered — ${answerLabel}\n`);
 
     return exitWithOutput({
       hookSpecificOutput: {
         hookEventName,
-        decision: { behavior: 'allow' },
+        decision: {
+          behavior: 'deny',
+          message: `Answered via Nudge: ${answerLabel}`,
+        },
         additionalContext: answerContext,
       },
     });

@@ -11,13 +11,20 @@ source "${SCRIPT_DIR}/lib.sh"
 # Read stdin (required by hook protocol) and persist session_id to a
 # per-port file so concurrent sessions don't overwrite each other.
 STDIN_DATA="$(cat)"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] SessionStart stdin: ${STDIN_DATA:0:200}" >> "${NUDGE_CONFIG_DIR}/hook-debug.log" 2>/dev/null
 if [[ "${STDIN_DATA}" =~ \"session_id\":\"([^\"]+)\" ]]; then
   PORT_SUFFIX="${CLAUDE_CODE_SSE_PORT:-}"
+  SESSION_ID="${BASH_REMATCH[1]}"
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] SessionStart: session_id=${SESSION_ID}, PORT=${PORT_SUFFIX}" >> "${NUDGE_CONFIG_DIR}/hook-debug.log" 2>/dev/null
   if [ -n "${PORT_SUFFIX}" ]; then
-    echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id.${PORT_SUFFIX}"
+    echo -n "${SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id.${PORT_SUFFIX}"
   else
-    echo -n "${BASH_REMATCH[1]}" > "${NUDGE_CONFIG_DIR}/session_id"
+    echo -n "${SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id"
   fi
+  # Also write to generic file so MCP server (which may lack PORT) can read it
+  echo -n "${SESSION_ID}" > "${NUDGE_CONFIG_DIR}/session_id"
+else
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)] SessionStart: no session_id found in stdin" >> "${NUDGE_CONFIG_DIR}/hook-debug.log" 2>/dev/null
 fi
 
 # --- Check if configured ---
