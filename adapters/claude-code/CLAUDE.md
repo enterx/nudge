@@ -1,36 +1,38 @@
 ## Nudge Plugin
 
-### How Nudge Works — Hooks-First Architecture
+### How Nudge Works
 
-Nudge uses **hooks** as the primary mechanism for all user interactions:
+Nudge uses **hooks** and **MCP tools** to bridge Claude Code and the user's mobile device:
 
 1. **Approval hook (automatic):** Intercepts `Bash`, `Write`, `Edit`, `NotebookEdit`
    tool calls via PermissionRequest. The user approves/denies on their phone.
    This happens **automatically** — Claude does NOT need to do anything.
 
-2. **Ask user hook (automatic):** Intercepts `AskUserQuestion` via PreToolUse.
-   In nudge mode, the question is forwarded to the user's phone and the answer
-   is returned via `additionalContext`. In terminal mode, it passes through
-   to the terminal dialog. **Use standard `AskUserQuestion` — hooks handle the rest.**
+2. **Ask user via MCP (recommended):** Use `nudge_ask_user` MCP tool to send
+   questions to the user's phone. This is the **recommended** approach because
+   MCP tools have clean lifecycle management and reliable event consistency.
 
-3. **MCP tools (fallback):** `nudge_ask_user` and `nudge_approve` exist as
-   fallbacks for environments that don't support hooks (e.g., future Cursor/Gemini
-   adapters). **Do NOT use these in Claude Code** — hooks handle everything.
+3. **Ask user via hook (experimental):** A PermissionRequest hook also intercepts
+   `AskUserQuestion` and forwards it to mobile. However, this approach has
+   **known event consistency issues** — see "Known Limitations" below.
+   Use `nudge_ask_user` MCP tool instead when in nudge mode.
 
-4. **Notification MCP tool (explicit):** `nudge_notify` is the only MCP tool
+4. **Notification MCP tool (explicit):** `nudge_notify` is the only other MCP tool
    Claude should call directly, for one-way status updates.
+
+5. **Approval MCP tool:** `nudge_approve` is for yes/no decisions that are NOT
+   tool-call approvals (e.g., "Deploy to prod?", "Create PR?").
 
 ### Ask Mode — Terminal vs Mobile
 
 The user toggles mode via `/nudge:afk` or `/nudge:desk`:
 
-- **`nudge` mode** (default): AskUserQuestion is forwarded to mobile via hook.
-  Approvals are handled via mobile. User is AFK.
-- **`terminal` mode**: AskUserQuestion shows in terminal normally.
-  Approvals show in terminal. User is at the terminal.
+- **`nudge` mode** (default): Questions and approvals go to mobile. User is AFK.
+  **Use `nudge_ask_user` MCP tool** for questions (not `AskUserQuestion`).
+- **`terminal` mode**: Questions and approvals stay in terminal. User is present.
+  Use standard `AskUserQuestion` — it shows in the terminal normally.
 
-The active mode is injected via SessionStart hook. **Always use standard
-`AskUserQuestion`** — the hook automatically routes it based on mode.
+The active mode is injected via SessionStart hook.
 
 ### MCP Tool Usage
 
@@ -38,7 +40,7 @@ The active mode is injected via SessionStart hook. **Always use standard
 |------|-------------|
 | `nudge_notify` | One-way status updates (fire-and-forget). No response expected. **Always use this.** |
 | `nudge_approve` | Yes/no decisions that are NOT tool-call approvals — e.g., "Deploy to prod?", "Create PR?", "Proceed with this approach?". Tool-call approvals (Bash, Write, Edit) are handled automatically by hooks. |
-| `nudge_ask_user` | **Fallback only** — use `AskUserQuestion` instead (hooks handle routing). |
+| `nudge_ask_user` | **Recommended for questions in nudge mode.** Reliable event lifecycle — no consistency issues with cancellation. In terminal mode, use standard `AskUserQuestion` instead. |
 
 ### `nudge_notify` — Task Completion Notifications (MANDATORY)
 
@@ -76,8 +78,8 @@ context: "User reported two bugs: (1) QR camera wouldn't re-scan after a failed 
 level: "success"
 ```
 
-Do NOT use `nudge_notify` when you need a response — use `AskUserQuestion`
-instead (hooks will route it to mobile if in nudge mode).
+Do NOT use `nudge_notify` when you need a response — use `nudge_ask_user`
+MCP tool instead (in nudge mode) or `AskUserQuestion` (in terminal mode).
 
 ### After Every Task — Always Ask What's Next
 
@@ -85,12 +87,13 @@ instead (hooks will route it to mobile if in nudge mode).
 
 After completing a task:
 1. Send `nudge_notify` with the result summary
-2. Then use `AskUserQuestion` to ask what to do next
+2. Then use `nudge_ask_user` (nudge mode) or `AskUserQuestion` (terminal mode)
+   to ask what to do next
 
 Example flow:
 ```
 → nudge_notify(title: "Auth Fix Complete", body: "...", level: "success")
-→ AskUserQuestion(question: "What would you like to do next?", options: [...])
+→ nudge_ask_user(question: "What would you like to do next?", options: [...])
 ```
 
 Do NOT assume the next step. Do NOT chain tasks without asking. Always wait
@@ -104,11 +107,12 @@ and your work goes unnoticed.
 
 Required flow after every task completion:
 1. Send a result summary via `nudge_notify`
-2. **Immediately use `AskUserQuestion`** to ask what to do next
-3. Wait for the user's response (hooks will forward to mobile — just wait)
+2. **Immediately use `nudge_ask_user`** (nudge mode) or **`AskUserQuestion`**
+   (terminal mode) to ask what to do next
+3. Wait for the user's response
 4. Only stop when the user **explicitly** says they're done
 
-**Use `AskUserQuestion` instead of stopping. No exceptions.**
+**Use `nudge_ask_user` / `AskUserQuestion` instead of stopping. No exceptions.**
 
 ### Security — Never Send Secrets
 
@@ -142,6 +146,33 @@ If any nudge hook or tool fails (user not paired, network error), Claude Code
 falls back to the corresponding built-in behavior (terminal prompt for approvals,
 AskUserQuestion dialog for questions).
 
+### Known Limitations — Hook-Based AskUserQuestion (Experimental)
+
+The PermissionRequest hook for `AskUserQuestion` has **known event consistency
+issues** due to how Claude Code manages hook process lifecycle:
+
+- **SIGKILL on cancellation:** When the user presses Escape, Claude Code sends
+  SIGKILL (signal 9) to the hook process — not SIGINT or SIGTERM. SIGKILL cannot
+  be caught, so the hook has **no opportunity to clean up** or notify the backend.
+  This leaves the mobile card in a pending state (not dismissed).
+
+- **No graceful shutdown:** Because the process is killed immediately, any
+  in-flight API calls (e.g., cancelling the event on the backend) are aborted.
+  The `cancelAndExit` handler in the hook code never executes on Escape.
+
+- **PostToolUse fallback is unreliable:** The `nudge-cancel-pending.mjs` hook
+  attempts to clean up orphaned events, but PostToolUse/PostToolUseFailure hooks
+  have known issues with cancelled tool calls (see Claude Code GitHub issues
+  #4113, #19298).
+
+**This is why `nudge_ask_user` MCP tool is recommended over `AskUserQuestion`
+in nudge mode.** MCP tools are not subject to hook process lifecycle — they run
+within the MCP server process and can manage event cleanup reliably.
+
+The approval hook (PermissionRequest for Bash/Write/Edit) is less affected
+because approvals have a clear terminal fallback: if the hook is killed, Claude
+Code shows the terminal prompt and the PostToolUse hook resolves the mobile event.
+
 ### Technical Details
 
 #### Timeouts
@@ -174,10 +205,18 @@ The SSE client reconnects automatically when the 520s timeout fires:
 
 #### Cancellation protocol
 
-When the user presses Escape or sends SIGINT/SIGTERM to Claude Code:
+**Intended behavior** (when the hook receives SIGINT/SIGTERM):
 
 1. The hook process receives the signal
 2. It sends a `POST /eventsRespond/:eventId/respond` with `action: "cancelled"`
 3. The backend marks the event as cancelled and dismisses the mobile notification
 4. The hook exits 0
 5. A 3-second safety timeout forces exit if the cancel request hangs
+
+**Actual behavior** (current Claude Code limitation):
+
+Claude Code sends **SIGKILL** to hook processes on Escape, which cannot be caught.
+The cancellation handler does not execute, and the mobile event remains pending.
+For approval hooks, the PostToolUse fallback (`nudge-cancel-pending.mjs`) usually
+resolves the orphaned event. For AskUserQuestion hooks, cleanup is unreliable —
+this is a primary reason `nudge_ask_user` MCP tool is recommended instead.

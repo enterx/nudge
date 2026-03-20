@@ -125,6 +125,19 @@ Send a one-way notification (fire-and-forget). Does not wait for a response.
 | `PermissionRequest` | `nudge-hook.mjs` | sync | Sends approval requests to phone |
 | `SessionEnd` | `nudge-session-end.sh` | async | Notifies when the session ends |
 
+### AskUserQuestion routing — MCP recommended
+
+The PermissionRequest hook also intercepts `AskUserQuestion` and forwards it to
+mobile. However, this hook-based approach has **known event consistency issues**:
+Claude Code sends SIGKILL to hook processes on cancellation (e.g., user presses
+Escape), which cannot be caught — the hook has no opportunity to dismiss the
+mobile card, leaving it in a pending state.
+
+**The `nudge_ask_user` MCP tool is recommended** for questions in nudge mode.
+MCP tools run within the MCP server process and are not subject to hook process
+lifecycle, so event cleanup is reliable. The hook-based `AskUserQuestion`
+forwarding remains available as an experimental fallback.
+
 ### Graceful degradation
 
 Every hook exits with code 0 on failure. The AI tool falls back to its built-in terminal prompt if Nudge is unreachable, unconfigured, or errors out. You never get stuck.
