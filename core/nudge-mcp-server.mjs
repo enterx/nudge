@@ -9,12 +9,13 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 import {
   PROVIDER,
   LAST_NOTIFY_PATH,
+  SESSION_NAME_PATH,
   SERVER_NAME,
   SERVER_VERSION,
   PROTOCOL_VERSION,
@@ -33,6 +34,23 @@ const { log: debugLog } = createLogger('mcp-debug');
 // readFileSync is ~50μs, negligible compared to MCP tool call latency.
 function getSessionIdLazy() {
   return getSessionId();
+}
+
+// Read session name written by hooks (from /rename or transcript extraction).
+// If not found and a name is provided by Claude, persist it for later calls.
+function getSessionNameLazy() {
+  try {
+    const name = readFileSync(SESSION_NAME_PATH, 'utf8').trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionName(name) {
+  if (name) {
+    try { writeFileSync(SESSION_NAME_PATH, name); } catch { /* ignore */ }
+  }
 }
 
 // --- Input validation ---
@@ -125,7 +143,9 @@ async function waitWithTracking(rtdbStreamUrl, token, apiUrl, eventId, requestId
 // --- MCP Tool: nudge_ask_user ---
 
 async function handleNudgeAskUser(args, requestId) {
-  const { question, options, multiSelect = false, context, sessionName } = args;
+  const { question, options, multiSelect = false, context, sessionName: argSessionName } = args;
+  const sessionName = argSessionName || getSessionNameLazy();
+  if (argSessionName) persistSessionName(argSessionName);
 
   if (!question || typeof question !== 'string') {
     throw new Error('question is required and must be a string');
@@ -203,7 +223,9 @@ async function handleNudgeAskUser(args, requestId) {
 // --- MCP Tool: nudge_approve ---
 
 async function handleNudgeApprove(args, requestId) {
-  const { description, toolName = 'unknown', context, toolInput: argToolInput, cwd, sessionName } = args;
+  const { description, toolName = 'unknown', context, toolInput: argToolInput, cwd, sessionName: argSessionName } = args;
+  const sessionName = argSessionName || getSessionNameLazy();
+  if (argSessionName) persistSessionName(argSessionName);
 
   if (!description || typeof description !== 'string') {
     throw new Error('description is required and must be a string');
@@ -273,7 +295,9 @@ async function handleNudgeApprove(args, requestId) {
 // --- MCP Tool: nudge_notify ---
 
 async function handleNudgeNotify(args) {
-  const { title, body, level = 'info', context, sessionName } = args;
+  const { title, body, level = 'info', context, sessionName: argSessionName } = args;
+  const sessionName = argSessionName || getSessionNameLazy();
+  if (argSessionName) persistSessionName(argSessionName);
 
   if (!title || typeof title !== 'string') {
     throw new Error('title is required and must be a string');

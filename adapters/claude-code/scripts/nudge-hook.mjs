@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-import { PROVIDER, SESSION_ID_PATH, getSessionId } from './lib/constants.mjs';
+import { PROVIDER, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
 import { createLogger } from './lib/logger.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
@@ -261,8 +261,14 @@ async function main() {
   // Build event payload
   const description = buildDescription(toolName, toolInput);
   const sanitizedInput = buildToolInput(toolInput);
-  const sessionName = extractSessionName(transcriptPath)
+  // Session name priority: hook field (if Claude Code exposes it) > transcript /rename > CWD
+  const sessionName = hookData.session_name
+    || extractSessionName(transcriptPath)
     || (cwd ? cwd.split('/').filter(Boolean).pop() : null);
+  // Persist session name so MCP server can read it (same PPID-keyed approach as session ID)
+  if (sessionName) {
+    try { writeFileSync(SESSION_NAME_PATH, sessionName); } catch { /* ignore */ }
+  }
 
   // --- AskUserQuestion: send as elicitation, return answer via additionalContext ---
   let askUserQuestion = null;

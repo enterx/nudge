@@ -30,6 +30,11 @@ export const SESSION_ID_PATH = join(
   ppid ? `session_id.${ppid}` : 'session_id',
 );
 
+export const SESSION_NAME_PATH = join(
+  NUDGE_CONFIG_DIR,
+  ppid ? `session_name.${ppid}` : 'session_name',
+);
+
 // --- API ---
 
 export const DEFAULT_API_URL =

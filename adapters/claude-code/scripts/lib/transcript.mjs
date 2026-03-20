@@ -12,14 +12,15 @@ import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 const TAIL_BYTES = 16_384; // Read last 16 KB of transcript
 
 /**
- * Extract the most recent sessionName from a Claude Code transcript file.
+ * Extract the session name from a Claude Code transcript file.
  *
- * The transcript is JSONL — one JSON object per line. We scan the last
- * chunk for assistant messages containing tool_use blocks with a
- * sessionName input parameter.
+ * Priority:
+ * 1. /rename custom title ({"type":"custom-title","customTitle":"..."})
+ *    — scanned from the full file since it can appear at any position
+ * 2. Most recent MCP tool_use sessionName from the tail
  *
  * @param {string} transcriptPath - Absolute path to the transcript JSONL file
- * @returns {string|null} The most recent sessionName, or null
+ * @returns {string|null} The session name, or null
  */
 export function extractSessionName(transcriptPath) {
   if (!transcriptPath) return null;
@@ -28,10 +29,26 @@ export function extractSessionName(transcriptPath) {
     const stat = statSync(transcriptPath);
     if (!stat.isFile() || stat.size === 0) return null;
 
-    // Read the tail of the file to avoid loading huge transcripts
+    // 1. Fast full-file scan for custom-title (from /rename command).
+    //    Only parse lines containing "custom-title" to stay lightweight.
+    const full = readFileSync(transcriptPath, 'utf-8');
+    let customTitle = null;
+    for (const line of full.split('\n')) {
+      if (!line.includes('"custom-title"')) continue;
+      try {
+        const entry = JSON.parse(line.trim());
+        if (entry.type === 'custom-title' && entry.customTitle) {
+          customTitle = entry.customTitle;
+        }
+      } catch { continue; }
+    }
+
+    if (customTitle) return customTitle;
+
+    // 2. Tail scan for MCP tool_use sessionName (fallback)
     let raw;
     if (stat.size <= TAIL_BYTES) {
-      raw = readFileSync(transcriptPath, 'utf-8');
+      raw = full; // already loaded
     } else {
       const fd = openSync(transcriptPath, 'r');
       const buf = Buffer.alloc(TAIL_BYTES);
@@ -40,22 +57,17 @@ export function extractSessionName(transcriptPath) {
       raw = buf.toString('utf-8');
     }
 
-    const lines = raw.split('\n');
     let lastSessionName = null;
-
-    for (const line of lines) {
+    for (const line of raw.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
       let entry;
       try {
         entry = JSON.parse(trimmed);
-      } catch {
-        continue; // Partial line from tail read — skip
-      }
+      } catch { continue; }
 
       if (entry.type !== 'assistant') continue;
-
       const contents = entry.message?.content;
       if (!Array.isArray(contents)) continue;
 
