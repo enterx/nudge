@@ -9,7 +9,7 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -32,11 +32,11 @@ function pendingFilePath(sessionId, eventId) {
   return join(homedir(), '.nudge', `pending-${sessionId}-${eventId}.json`);
 }
 
-function writePending(sessionId, eventId, apiUrl, token, pattern) {
+function writePending(sessionId, eventId, apiUrl, token, pattern, toolUseId, toolName) {
   try {
     writeFileSync(
       pendingFilePath(sessionId, eventId),
-      JSON.stringify({ eventId, apiUrl, token, pattern }),
+      JSON.stringify({ eventId, apiUrl, token, pattern, toolUseId, toolName }),
       { mode: 0o600 },
     );
   } catch { /* best-effort */ }
@@ -185,8 +185,13 @@ async function main() {
   const toolInput = hookData.tool_input || {};
   const sessionId = getSessionId(hookData.session_id);
   // Persist session_id to file so MCP server can read the same ID.
-  // Write on every call (cheap) to ensure the file exists for MCP.
+  // Write to both port-specific AND generic file — MCP may not have
+  // CLAUDE_CODE_SSE_PORT in its environment, so it reads the generic one.
   try { writeFileSync(SESSION_ID_PATH, sessionId); } catch { /* ignore */ }
+  const genericPath = join(homedir(), '.nudge', 'session_id');
+  if (SESSION_ID_PATH !== genericPath) {
+    try { writeFileSync(genericPath, sessionId); } catch { /* ignore */ }
+  }
   const cwd = hookData.cwd;
   const transcriptPath = hookData.transcript_path;
 
@@ -222,6 +227,36 @@ async function main() {
   }
 
   const apiUrl = getApiUrl(config);
+
+  // --- Clean up orphaned elicitation events from previous Escape/SIGKILL ---
+  // When AskUserQuestion is Escaped, SIGKILL prevents cleanup. The pending file
+  // remains on disk. Cancel these orphaned events now before creating a new one.
+  try {
+    const nudgeDir = join(homedir(), '.nudge');
+    const prefix = `pending-${sessionId}-`;
+    const orphaned = readdirSync(nudgeDir).filter(
+      (f) => f.startsWith(prefix) && f.endsWith('.json'),
+    );
+    for (const file of orphaned) {
+      const filePath = join(nudgeDir, file);
+      try {
+        const pending = JSON.parse(readFileSync(filePath, 'utf-8'));
+        if (pending.pattern !== 'elicitation') continue;
+        // Cancel on server (fire-and-forget)
+        hookLog(`cleaning orphaned elicitation event: ${pending.eventId}`);
+        unlinkSync(filePath);
+        fetch(`${apiUrl}/eventsRespond/${pending.eventId}/respond`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${pending.token}`,
+          },
+          body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled (orphaned)' }),
+          signal: AbortSignal.timeout(5_000),
+        }).catch(() => {});
+      } catch { /* ignore individual file errors */ }
+    }
+  } catch { /* ignore — best effort */ }
 
   // Build event payload
   const description = buildDescription(toolName, toolInput);
@@ -312,7 +347,7 @@ async function main() {
 
   // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
   const eventPattern = isAskUser ? 'elicitation' : 'approval';
-  writePending(sessionId, eventId, apiUrl, token, eventPattern);
+  writePending(sessionId, eventId, apiUrl, token, eventPattern, hookData.tool_use_id, toolName);
 
   process.stderr.write(
     isAskUser

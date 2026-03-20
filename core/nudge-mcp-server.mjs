@@ -28,20 +28,11 @@ import { waitForDecision } from './lib/sse.mjs';
 import { encryptFields } from './lib/crypto.mjs';
 const { log: debugLog } = createLogger('mcp-debug');
 
-// Lazy: SessionStart hook may write ~/.nudge/session_id after MCP starts.
-// Keep trying until the file-based ID is found, then cache it.
-let cachedSessionId = null;
-let sessionIdResolved = false;
+// Read session ID fresh every time — the file is updated by hooks when a new
+// session starts, so caching risks returning a stale ID from the prior session.
+// readFileSync is ~50μs, negligible compared to MCP tool call latency.
 function getSessionIdLazy() {
-  if (sessionIdResolved) return cachedSessionId;
-  const id = getSessionId();
-  cachedSessionId = id;
-  // Only lock the cache once we got a file-based or hook-based ID
-  // (not a cc-PORT fallback that could be stale from a prior session)
-  if (!id.startsWith('cc-') && !id.startsWith('session-')) {
-    sessionIdResolved = true;
-  }
-  return id;
+  return getSessionId();
 }
 
 // --- Input validation ---

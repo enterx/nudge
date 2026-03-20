@@ -4,9 +4,15 @@
  *
  * When a tool completes (or fails/is denied), resolves any pending mobile events
  * for this session with the correct action and response data:
- *   - PostToolUse (approval)     → approved  + reason "Approved in terminal"
- *   - PostToolUseFailure         → denied    + reason "Denied in terminal"
- *   - PostToolUse (elicitation)  → answered  + selectedOptions/reason from tool_response
+ *   - PostToolUse (matching toolUseId)  → approved  + reason "Approved in terminal"
+ *   - PostToolUse (stale toolUseId)     → denied    + reason "Denied in terminal"
+ *   - PostToolUseFailure                → denied    + reason "Denied in terminal"
+ *   - PostToolUse (elicitation)         → answered  + selectedOptions/reason from tool_response
+ *
+ * When a user denies a tool via Terminal (No/Escape), Claude Code does NOT fire
+ * PostToolUse/PostToolUseFailure for that tool. The pending file survives until
+ * the next tool's PostToolUse picks it up. We detect this via toolUseId mismatch
+ * and correctly mark the stale event as "denied".
  *
  * Scans for all pending-{sessionId}-*.json files to support parallel tool calls.
  * Runs async so it never blocks tool execution.
@@ -74,6 +80,7 @@ async function main() {
 
   const hookEventName = hookData.hook_event_name;
   const isFailure = hookEventName === 'PostToolUseFailure';
+  const currentToolUseId = hookData.tool_use_id;
 
   const sessionId = getSessionId(hookData.session_id);
   const nudgeDir = join(homedir(), '.nudge');
@@ -102,15 +109,25 @@ async function main() {
         return;
       }
 
-      const { eventId, apiUrl, token, pattern } = pending;
+      const { eventId, apiUrl, token, pattern, toolUseId } = pending;
       if (!eventId || !apiUrl || !token) return;
 
       // Delete file first to avoid duplicate responses
       try { unlinkSync(filePath); } catch { /* ignore */ }
 
+      // Check if this pending file belongs to the current tool execution.
+      // When a user denies a tool in the terminal (No/Escape), Claude Code does
+      // NOT fire PostToolUse/PostToolUseFailure for that tool. The pending file
+      // remains until the NEXT tool's PostToolUse picks it up. In that case,
+      // toolUseId won't match → the original tool was denied/cancelled.
+      const isStaleEvent = toolUseId && currentToolUseId && toolUseId !== currentToolUseId;
+
       // Determine the correct action and payload
       let body;
-      if (pattern === 'elicitation') {
+      if (isStaleEvent) {
+        // This pending file is from a previously denied/escaped tool
+        body = { action: 'denied', reason: 'Denied in terminal' };
+      } else if (pattern === 'elicitation') {
         const answerData = extractAskUserAnswer(hookData);
         body = {
           action: 'answered',
