@@ -21,53 +21,67 @@ Thank you for your interest in contributing. This document covers the setup, con
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/anthropics/nudge-plugin.git
+git clone https://github.com/enterx/nudge-plugin.git
 cd nudge-plugin
 ```
 
-2. Load the plugin in Claude Code:
+2. Build and load the plugin in Claude Code:
 
 ```bash
-claude --plugin-dir ./plugins/nudge
+bash build.sh
 ```
 
-3. Make changes, then restart Claude Code to pick up hook/MCP changes.
+Then in Claude Code:
+```
+/plugin marketplace add /path/to/nudge-plugin/dist/claude-code
+/plugin install nudge
+```
+
+3. Make changes, rebuild, then restart Claude Code to pick up hook/MCP changes.
 
 For rapid iteration on scripts that do not affect hooks registration or MCP server startup, you can test them directly:
 
 ```bash
-echo '{}' | bash scripts/nudge-session-start.sh
-echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node scripts/nudge-hook.mjs
+echo '{}' | bash core/nudge-session-start.sh
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node adapters/claude-code/scripts/nudge-hook.mjs
 ```
 
 ## Project structure
 
-| Directory | Purpose |
-|-----------|---------|
-| `scripts/` | Bash and Node.js scripts executed by hooks and skills |
-| `scripts/lib.sh` | Shared bash utilities: config I/O, HTTP helpers, JSON extraction, logging |
-| `servers/` | MCP server (`nudge-mcp-server.mjs`) |
-| `skills/` | Skill definitions (`.md` files in subdirectories) |
-| `hooks/` | Hook registration (`hooks.json`) |
+```
+nudge-plugin/
+├── core/                       # Shared code (source of truth)
+│   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
+│   ├── lib.sh                  # Shared bash utilities
+│   ├── nudge-mcp-server.mjs    # MCP server (3 tools)
+│   ├── nudge-*.sh              # Shared scripts (pair, mode, status, notify)
+│   └── tests/                  # Test suite
+├── adapters/
+│   └── claude-code/            # Claude Code-specific files
+│       ├── hooks/hooks.json    # Hook registration
+│       ├── .mcp.json           # MCP server registration
+│       ├── CLAUDE.md           # Context instructions
+│       ├── skills/             # Skill definitions
+│       └── scripts/            # Hook scripts (hook, activity, session)
+├── build.sh                    # Assembles dist/ from core + adapters
+└── dist/
+    └── claude-code/            # Build output (self-contained, installable)
+```
 
 ### Key files
 
-- **`lib.sh`**: Every bash script sources this. It provides `config_read`, `config_write`, `api_post`, `api_get`, `json_extract`, `graceful_exit`, and token management.
-- **`nudge-hook.mjs`**: The core PermissionRequest handler. Reads stdin (hook input JSON), posts to the Nudge API, waits for SSE response, outputs an allow/deny decision.
-- **`nudge-mcp-server.mjs`**: JSON-RPC 2.0 over stdio. Implements `nudge_ask_user`, `nudge_approve`, `nudge_notify`.
+- **`core/lib.sh`**: Every bash script sources this. It provides `config_read`, `config_write`, `api_post`, `api_get`, `json_extract`, `graceful_exit`, and token management.
+- **`adapters/claude-code/scripts/nudge-hook.mjs`**: The core PermissionRequest handler. Reads stdin (hook input JSON), posts to the Nudge API, waits for SSE response, outputs an allow/deny decision.
+- **`core/nudge-mcp-server.mjs`**: JSON-RPC 2.0 over stdio. Implements `nudge_ask_user`, `nudge_approve`, `nudge_notify`.
 
 ## Running tests
 
 ```bash
-bash scripts/nudge-scripts.test.sh
+bash build.sh
+cd dist/claude-code/plugins/nudge && bash tests/run-all.sh
 ```
 
-The test suite uses a temporary `$HOME` directory to isolate config state. It tests:
-
-- `lib.sh` functions: `config_exists`, `config_read`, `config_write`, `json_extract`, `get_api_url`, `is_token_expired`, `graceful_exit`
-- Shell hooks: `nudge-session-start.sh`, `nudge-mode.sh`, `nudge-notify.sh`, `nudge-session-end.sh`
-
-Network-dependent tests (hooks that call the API) are not included. Use `/nudge:test` in a live Claude Code session for end-to-end verification.
+The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required. Use `/nudge:test` in a live Claude Code session for end-to-end verification.
 
 ## Code style
 
@@ -94,26 +108,26 @@ Network-dependent tests (hooks that call the API) are not included. Use `/nudge:
 
 ## Adding a new hook
 
-1. Write the script in `scripts/` (bash or Node.js).
-2. Register it in `hooks/hooks.json` under the appropriate event.
+1. Write the script in `core/` (shared) or `adapters/claude-code/scripts/` (adapter-specific).
+2. Register it in `adapters/claude-code/hooks/hooks.json` under the appropriate event.
 3. Set `timeout` appropriately:
    - Sync hooks (blocking): keep it short (5-30s). Use 86400 for PermissionRequest (user may be AFK).
    - Async hooks (fire-and-forget): 10-30s is typical.
 4. Decide on `async: true` (non-blocking) or omit for sync (blocking).
-5. Test with `echo '<json>' | bash scripts/your-script.sh` or `| node scripts/your-script.mjs`.
-6. Add tests to `nudge-scripts.test.sh` if it is a bash script.
+5. Test with `echo '<json>' | bash core/your-script.sh` or `| node adapters/claude-code/scripts/your-script.mjs`.
+6. Add tests to `core/tests/`.
 
 ## Adding a new MCP tool
 
-1. Define the tool schema in `servers/nudge-mcp-server.mjs` (follow existing `TOOL_DEFINITION` pattern).
+1. Define the tool schema in `core/nudge-mcp-server.mjs` (follow existing `TOOL_DEFINITION` pattern).
 2. Add it to the `handleToolsList` response.
 3. Add the handler function and wire it in `handleToolsCall`.
-4. Update `CLAUDE.md` to document when Claude should use the new tool.
-5. Add tests to `servers/nudge-mcp-server.test.mjs`.
+4. Update `adapters/claude-code/CLAUDE.md` to document when Claude should use the new tool.
+5. Add tests to `core/tests/`.
 
 ## Adding a new skill
 
-1. Create a subdirectory in `skills/` (e.g., `skills/my-skill/`).
+1. Create a subdirectory in `adapters/claude-code/skills/` (e.g., `skills/my-skill/`).
 2. Add a `SKILL.md` file with front matter: `name` (the skill suffix) and `description`.
 3. Body: instructions for Claude Code on what to do (run a script, call an MCP tool, etc.).
 
