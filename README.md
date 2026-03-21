@@ -199,7 +199,7 @@ nudge-plugin/
 │   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
 │   ├── lib.sh                  # Shared bash utilities
 │   ├── nudge-mcp-server.mjs    # MCP server (6 tools)
-│   ├── nudge-*.sh              # Shared scripts (session, notify)
+│   ├── nudge-notify.sh          # Idle-prompt notification script
 │   └── tests/                  # Test suite
 ├── adapters/
 │   └── claude-code/            # Claude Code adapter
@@ -262,7 +262,7 @@ Nudge is **zero-knowledge by design**. All sensitive data is encrypted with **AE
 | Context (conversation summary) | Yes | — |
 | Working directory (cwd) | Yes | — |
 | Notification title | — | Yes |
-| Session name | — | Yes |
+| Session name | Yes | — |
 | Tool name (`Bash`, `Edit`, etc.) | — | Yes |
 | Event pattern (`approval`, etc.) | — | Yes |
 

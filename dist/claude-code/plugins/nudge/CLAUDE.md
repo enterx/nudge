@@ -183,7 +183,7 @@ Code shows the terminal prompt and the PostToolUse hook resolves the mobile even
 - **PermissionRequest hook**: 86400s (24 hours). The user may be AFK for hours.
   Also handles AskUserQuestion forwarding to mobile.
 - **PreToolUse hook** (Activity): 15s. Sends activity notifications for WebSearch/WebFetch.
-- **Async hooks** (PostToolUse, PostToolUseFailure, SessionEnd): 10-30s.
+- **Async hooks** (PostToolUse, PostToolUseFailure, SessionEnd): 10s.
 - **SessionStart hook**: 5s (just reads config and outputs JSON).
 
 #### Reconnection protocol
