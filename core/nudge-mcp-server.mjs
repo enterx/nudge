@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Nudge MCP Server — nudge_ask_user, nudge_approve, nudge_notify,
- *   nudge_status, nudge_mode, nudge_pair, nudge_pair_wait tools
+ *   nudge_status, nudge_pair, nudge_pair_wait tools
  *
  * Sends questions/approvals to the user's phone via push notification.
  * The user responds on their phone, and the answer is returned to Claude via SSE.
@@ -360,8 +360,9 @@ async function handleNudgeNotify(args) {
 }
 
 // --- MCP Tool: nudge_status ---
+// Also handles mode switching when "mode" parameter is provided.
 
-async function handleNudgeStatus() {
+async function handleNudgeStatus(args) {
   const config = readConfig();
 
   if (!config) {
@@ -373,6 +374,17 @@ async function handleNudgeStatus() {
     };
   }
 
+  // Handle mode switching if requested
+  const newMode = args?.mode;
+  if (newMode) {
+    if (newMode !== 'nudge' && newMode !== 'terminal') {
+      throw new Error('mode must be "nudge" or "terminal"');
+    }
+    const previousMode = config.askMode || 'nudge';
+    updateConfigKey('askMode', newMode);
+    config.askMode = newMode;
+  }
+
   const apiUrl = getApiUrl(config);
   const result = {
     paired: true,
@@ -381,6 +393,14 @@ async function handleNudgeStatus() {
     server: apiUrl,
     askMode: config.askMode || 'nudge',
   };
+
+  // Include mode change info if switched
+  if (newMode) {
+    result.modeChanged = true;
+    result.message = newMode === 'nudge'
+      ? 'Questions will now be sent to your mobile device.'
+      : 'Questions will now appear in the terminal.';
+  }
 
   // Check server connectivity
   try {
@@ -404,43 +424,6 @@ async function handleNudgeStatus() {
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result) }],
-  };
-}
-
-// --- MCP Tool: nudge_mode ---
-
-async function handleNudgeMode(args) {
-  const config = readConfig();
-  if (!config) {
-    throw new Error('Nudge is not configured. Run /pair first.');
-  }
-
-  const currentMode = config.askMode || 'nudge';
-  const newMode = args.mode;
-
-  if (!newMode) {
-    return {
-      content: [{ type: 'text', text: JSON.stringify({
-        currentMode,
-        availableModes: ['nudge', 'terminal'],
-      }) }],
-    };
-  }
-
-  if (newMode !== 'nudge' && newMode !== 'terminal') {
-    throw new Error('mode must be "nudge" or "terminal"');
-  }
-
-  updateConfigKey('askMode', newMode);
-
-  return {
-    content: [{ type: 'text', text: JSON.stringify({
-      previousMode: currentMode,
-      currentMode: newMode,
-      message: newMode === 'nudge'
-        ? 'Questions will now be sent to your mobile device.'
-        : 'Questions will now appear in the terminal.',
-    }) }],
   };
 }
 
@@ -723,19 +706,8 @@ const STATUS_TOOL_DEFINITION = {
   name: 'nudge_status',
   description:
     'Check Nudge connection and configuration status. ' +
-    'Returns pairing state, server connectivity, and auth token validity.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-  },
-};
-
-const MODE_TOOL_DEFINITION = {
-  name: 'nudge_mode',
-  description:
-    'Get or set the Nudge ask mode. ' +
-    'Without "mode" parameter, returns current mode. ' +
-    'With "mode" set to "nudge" or "terminal", switches the mode.',
+    'Returns pairing state, server connectivity, auth token validity, and current ask mode. ' +
+    'Optionally switches the ask mode when "mode" parameter is provided.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -743,8 +715,8 @@ const MODE_TOOL_DEFINITION = {
         type: 'string',
         enum: ['nudge', 'terminal'],
         description:
-          'The mode to switch to. "nudge" sends questions to mobile, ' +
-          '"terminal" keeps questions in the terminal. Omit to check current mode.',
+          'Switch ask mode. "nudge" sends questions to mobile (AFK), ' +
+          '"terminal" keeps questions in the terminal (desk). Omit to just check status.',
       },
     },
   },
@@ -797,7 +769,7 @@ function handleToolsList(id) {
     result: {
       tools: [
         TOOL_DEFINITION, APPROVE_TOOL_DEFINITION, NOTIFY_TOOL_DEFINITION,
-        STATUS_TOOL_DEFINITION, MODE_TOOL_DEFINITION,
+        STATUS_TOOL_DEFINITION,
         PAIR_TOOL_DEFINITION, PAIR_WAIT_TOOL_DEFINITION,
       ],
     },
@@ -809,7 +781,6 @@ const TOOL_HANDLERS = {
   nudge_approve: handleNudgeApprove,
   nudge_notify: handleNudgeNotify,
   nudge_status: handleNudgeStatus,
-  nudge_mode: handleNudgeMode,
   nudge_pair: handleNudgePair,
   nudge_pair_wait: handleNudgePairWait,
 };

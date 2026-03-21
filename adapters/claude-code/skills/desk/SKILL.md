@@ -3,7 +3,7 @@ name: desk
 description: "Switch to terminal mode — questions stay in the terminal"
 ---
 
-Switch Nudge to desk (terminal) mode by calling the `mcp__plugin_nudge_nudge-mcp__nudge_mode` tool with `mode: "terminal"`.
+Switch Nudge to desk (terminal) mode by calling the `mcp__plugin_nudge_nudge-mcp__nudge_status` tool with `mode: "terminal"`.
 
 Show the result to the user.
 

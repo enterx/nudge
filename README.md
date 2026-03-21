@@ -72,7 +72,7 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 
 ## MCP tools
 
-The plugin exposes three tools via its MCP server. The AI tool calls these directly.
+The plugin exposes six tools via its MCP server. The AI tool calls these directly.
 
 ### `nudge_ask_user`
 
@@ -110,6 +110,26 @@ Send a one-way notification (fire-and-forget). Does not wait for a response.
 | `level` | string | No | `info` (default), `success`, `warning`, `error` |
 | `context` | string | No | Conversation summary |
 | `sessionName` | string | No | Session title shown on mobile |
+
+### `nudge_status`
+
+Check connection/config status. Also handles mode switching via the `mode` parameter. Used by `/status`, `/afk`, and `/desk` skills.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `mode` | string | No | Switch ask mode: `nudge` (AFK) or `terminal` (desk). Omit to just check status. |
+
+### `nudge_pair`
+
+Start the device pairing flow. Generates a pairing code and sets up E2E encryption. Returns the code for the user to enter in the Nudge app. Call `nudge_pair_wait` after showing the code.
+
+No parameters.
+
+### `nudge_pair_wait`
+
+Wait for the pairing flow to complete. Polls the server until the mobile device claims the code (up to 10 minutes). Must be called after `nudge_pair`.
+
+No parameters.
 
 ## Hooks
 
@@ -176,10 +196,10 @@ Toggle with `/afk` or `/desk`.
 ```
 nudge-plugin/
 ├── core/                       # Shared code (source of truth)
-│   ├── lib/                    # Node.js modules (api, config, sse, etc.)
+│   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
 │   ├── lib.sh                  # Shared bash utilities
-│   ├── nudge-mcp-server.mjs    # MCP server (3 tools)
-│   ├── nudge-*.sh              # Shared scripts (pair, mode, status, notify)
+│   ├── nudge-mcp-server.mjs    # MCP server (6 tools)
+│   ├── nudge-*.sh              # Shared scripts (session, notify)
 │   └── tests/                  # Test suite
 ├── adapters/
 │   └── claude-code/            # Claude Code adapter
