@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Nudge MCP Server — nudge_ask_user, nudge_approve, nudge_notify,
- *   nudge_status, nudge_pair, nudge_pair_wait tools
+ *   nudge_status tools
  *
  * Sends questions/approvals to the user's phone via push notification.
  * The user responds on their phone, and the answer is returned to Claude via SSE.
@@ -10,26 +10,24 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 import {
   PROVIDER,
   LAST_NOTIFY_PATH,
-  NUDGE_CONFIG_DIR,
   SESSION_NAME_PATH,
   SERVER_NAME,
   SERVER_VERSION,
   PROTOCOL_VERSION,
-  API_TIMEOUT_MS,
   getSessionId,
 } from '../scripts/lib/constants.mjs';
 import { createLogger } from '../scripts/lib/logger.mjs';
-import { readConfig, getApiUrl, writeConfig, updateConfigKey, deleteConfig } from '../scripts/lib/config.mjs';
+import { readConfig, getApiUrl, updateConfigKey } from '../scripts/lib/config.mjs';
 import { getValidToken } from '../scripts/lib/token-utils.mjs';
 import { apiPost, apiGet } from '../scripts/lib/api.mjs';
 import { waitForDecision } from '../scripts/lib/sse.mjs';
-import { encryptFields, generateEncryptionKey, deriveWrappingKey, wrapKey } from '../scripts/lib/crypto.mjs';
+import { encryptFields } from '../scripts/lib/crypto.mjs';
 const { log: debugLog } = createLogger('mcp-debug');
 
 // Read session ID fresh every time — the file is updated by hooks when a new
@@ -427,130 +425,6 @@ async function handleNudgeStatus(args) {
   };
 }
 
-// --- MCP Tool: nudge_pair ---
-
-async function handleNudgePair() {
-  // Clear old config and log
-  deleteConfig();
-  try { unlinkSync(`${NUDGE_CONFIG_DIR}/nudge.log`); } catch { /* ignore */ }
-
-  const apiUrl = getApiUrl(null);
-
-  // Generate pairing code
-  const pairResp = await apiPost(apiUrl, 'pairGenerate', {});
-
-  const pairingCode = pairResp.pairingCode;
-  const token = pairResp.token;
-  const refreshToken = pairResp.refreshToken || '';
-  const apiKey = pairResp.apiKey || '';
-  const pairId = pairResp.pairId;
-
-  if (!pairingCode || !token) {
-    throw new Error('Could not generate pairing code.');
-  }
-
-  // Set up E2E encryption
-  let encryptionKey = '';
-  try {
-    const key = generateEncryptionKey();
-    const wrappingKey = deriveWrappingKey(pairingCode, pairId);
-    const { wrappedKey, wrappingIv } = wrapKey(key, wrappingKey);
-
-    const resp = await fetch(`${apiUrl}/pairKeyExchange`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ wrappedKey, wrappingIv }),
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
-    });
-
-    if (resp.ok) {
-      encryptionKey = key;
-    }
-  } catch {
-    // Continue without encryption
-  }
-
-  // Save pending config (userId will be set by nudge_pair_wait on success)
-  writeConfig({
-    token,
-    refreshToken,
-    apiKey,
-    userId: '',
-    apiUrl,
-    pairingCode,
-    encryptionKey,
-  });
-
-  return {
-    content: [{ type: 'text', text: JSON.stringify({
-      pairingCode,
-      expiresInMinutes: 10,
-      message: 'Enter this code in the Nudge app on your phone.',
-    }) }],
-  };
-}
-
-// --- MCP Tool: nudge_pair_wait ---
-
-async function handleNudgePairWait() {
-  const config = readConfig();
-  if (!config?.pairingCode) {
-    throw new Error('No pending pairing. Run /pair-nudge first.');
-  }
-
-  const rawCode = config.pairingCode.replace(/-/g, '');
-  const token = config.token;
-  const apiUrl = getApiUrl(config);
-
-  const POLL_INTERVAL = 3_000;
-  const MAX_POLLS = 200; // 200 × 3s = 10 minutes
-
-  for (let i = 0; i < MAX_POLLS; i++) {
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-
-    let verifyResp;
-    try {
-      verifyResp = await apiPost(apiUrl, 'pairVerify', { code: rawCode }, token);
-    } catch {
-      continue;
-    }
-
-    if (verifyResp.status === 'paired') {
-      const userId = verifyResp.userId;
-      if (!userId) {
-        throw new Error('Incomplete pairing response from server.');
-      }
-      updateConfigKey('userId', userId);
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify({
-          paired: true,
-          message: 'Paired! Run /test-nudge to verify.',
-        }) }],
-      };
-    }
-
-    if (verifyResp.status === 'expired') {
-      return {
-        content: [{ type: 'text', text: JSON.stringify({
-          paired: false,
-          message: 'Pairing code expired. Run /pair-nudge again.',
-        }) }],
-      };
-    }
-  }
-
-  return {
-    content: [{ type: 'text', text: JSON.stringify({
-      paired: false,
-      message: 'Timed out waiting for pairing. Run /pair-nudge again.',
-    }) }],
-  };
-}
-
 // --- MCP Protocol ---
 
 const TOOL_DEFINITION = {
@@ -722,29 +596,6 @@ const STATUS_TOOL_DEFINITION = {
   },
 };
 
-const PAIR_TOOL_DEFINITION = {
-  name: 'nudge_pair',
-  description:
-    'Start the device pairing flow. Generates a pairing code and sets up E2E encryption. ' +
-    'Returns the pairing code for the user to enter in the Nudge mobile app. ' +
-    'After showing the code to the user, call nudge_pair_wait to wait for completion.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-  },
-};
-
-const PAIR_WAIT_TOOL_DEFINITION = {
-  name: 'nudge_pair_wait',
-  description:
-    'Wait for the pairing flow to complete. Polls the server until the mobile device ' +
-    'claims the pairing code (up to 10 minutes). Must be called after nudge_pair.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-  },
-};
-
 function handleInitialize(id) {
   return {
     jsonrpc: '2.0',
@@ -770,7 +621,6 @@ function handleToolsList(id) {
       tools: [
         TOOL_DEFINITION, APPROVE_TOOL_DEFINITION, NOTIFY_TOOL_DEFINITION,
         STATUS_TOOL_DEFINITION,
-        PAIR_TOOL_DEFINITION, PAIR_WAIT_TOOL_DEFINITION,
       ],
     },
   };
@@ -781,8 +631,6 @@ const TOOL_HANDLERS = {
   nudge_approve: handleNudgeApprove,
   nudge_notify: handleNudgeNotify,
   nudge_status: handleNudgeStatus,
-  nudge_pair: handleNudgePair,
-  nudge_pair_wait: handleNudgePairWait,
 };
 
 async function handleToolsCall(id, params) {
