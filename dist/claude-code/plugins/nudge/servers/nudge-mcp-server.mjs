@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Nudge MCP Server — nudge_ask_user, nudge_approve, nudge_notify,
- *   nudge_status, nudge_mode, nudge_pair, nudge_pair_wait tools
+ *   nudge_status, nudge_pair, nudge_pair_wait tools
  *
  * Sends questions/approvals to the user's phone via push notification.
  * The user responds on their phone, and the answer is returned to Claude via SSE.

@@ -3,7 +3,7 @@ name: afk
 description: "Switch to mobile mode — questions and approvals go to your phone"
 ---
 
-Switch Nudge to AFK (mobile) mode by calling the `mcp__plugin_nudge_nudge-mcp__nudge_mode` tool with `mode: "nudge"`.
+Switch Nudge to AFK (mobile) mode by calling the `mcp__plugin_nudge_nudge-mcp__nudge_status` tool with `mode: "nudge"`.
 
 Show the result to the user.
 
