@@ -72,7 +72,7 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 
 ## MCP tools
 
-The plugin exposes four tools via its MCP server. The AI tool calls these directly.
+The plugin exposes four tools via its MCP server. The AI tool calls these directly. Usage guidelines (when to call each tool, required behavior like always sending `nudge_notify` on task completion) are defined in `CLAUDE.md`, which is automatically loaded into the AI's context.
 
 ### `nudge_ask_user`
 
