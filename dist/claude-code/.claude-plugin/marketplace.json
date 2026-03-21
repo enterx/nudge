@@ -8,7 +8,7 @@
       "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
       "version": "1.0.0",
       "author": { "name": "EnterX LLC" },
-      "source": "./dist/claude-code/plugins/nudge",
+      "source": "./plugins/nudge",
       "category": "productivity",
       "license": "MIT"
     }

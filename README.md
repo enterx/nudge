@@ -64,7 +64,7 @@ In Claude Code:
 
 | Command | Description |
 |---------|-------------|
-| `/nudge:pair` | Pair your phone. Generates a 6-digit code. |
+| `/nudge:pair` | Pair your phone. Generates a pairing code. |
 | `/nudge:test` | Send a test notification to verify push delivery. |
 | `/nudge:status` | Check connection status, token validity, and server health. |
 | `/nudge:afk` | Switch to mobile mode — questions go to your phone. |
@@ -118,7 +118,9 @@ Send a one-way notification (fire-and-forget). Does not wait for a response.
 | `SessionStart` | `nudge-session-start.sh` | sync | Injects ask-mode context |
 | `PreToolUse` | `nudge-activity.mjs` | async | Activity notifications for WebSearch/WebFetch |
 | `PermissionRequest` | `nudge-hook.mjs` | sync | Sends approval requests to phone |
-| `SessionEnd` | `nudge-session-end.sh` | async | Notifies when the session ends |
+| `PostToolUse` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool completion |
+| `PostToolUseFailure` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool failure |
+| `SessionEnd` | `nudge-session-end.sh` | async | Cancels pending events and cleans up session |
 
 ### AskUserQuestion routing — MCP recommended
 
@@ -149,9 +151,8 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudg
   "refreshToken": "<firebase-refresh-token>",
   "apiKey": "<firebase-web-api-key>",
   "userId": "<firebase-uid>",
-  "apiUrl": "https://your-nudge-api.cloudfunctions.net",
+  "apiUrl": "https://api.appnudge.dev",
   "pairingCode": "ABC-DEF",
-  "askMode": "nudge",
   "encryptionKey": "<base64-encoded-aes-256-key>"
 }
 ```
@@ -217,10 +218,11 @@ The Nudge backend (Cloud Functions + Firebase) is not included in this repositor
 
 - `POST /eventsCreate` -- Create an event (approval, elicitation, notification)
 - `POST /eventsRespond/:eventId/respond` -- Respond to an event
+- `POST /pushNotifyFn` -- Send a push notification (fire-and-forget)
 - `POST /pairGenerate` -- Generate a pairing code
 - `POST /pairVerify` -- Verify pairing status
 - `POST /pairKeyExchange` -- Store wrapped E2E encryption key
-- `POST /testNotification` -- Send a test push
+- `POST /sessionEnd` -- Clean up session events
 - `GET /status` -- Health check
 
 SSE streaming uses Firebase Realtime Database REST API for real-time response delivery.
@@ -239,7 +241,8 @@ Nudge is **zero-knowledge by design**. All sensitive data is encrypted with **AE
 | Description (action summary) | Yes | — |
 | Context (conversation summary) | Yes | — |
 | Working directory (cwd) | Yes | — |
-| Session name | Yes | — |
+| Notification title | — | Yes |
+| Session name | — | Yes |
 | Tool name (`Bash`, `Edit`, etc.) | — | Yes |
 | Event pattern (`approval`, etc.) | — | Yes |
 
@@ -263,7 +266,7 @@ The encryption implementation is fully open-source:
 
 - **Key generation & encryption**: [`core/lib/crypto.mjs`](core/lib/crypto.mjs)
 - **Key exchange during pairing**: [`core/lib/setup-encryption.mjs`](core/lib/setup-encryption.mjs)
-- **Event encryption before sending**: [`core/nudge-mcp-server.mjs`](core/nudge-mcp-server.mjs) (`encryptSensitiveFields`)
+- **Event encryption before sending**: [`core/nudge-mcp-server.mjs`](core/nudge-mcp-server.mjs) and [`adapters/claude-code/scripts/nudge-hook.mjs`](adapters/claude-code/scripts/nudge-hook.mjs) (`encryptSensitiveFields`)
 
 ## Privacy & data handling
 

@@ -101,7 +101,7 @@ export async function waitForDecision(rtdbStreamUrl, token) {
             `SSE connection failed after ${SSE_MAX_RECONNECTS} attempts: ${safeMsg}`,
           );
         }
-        // Exponential backoff
+        // Linear backoff
         await new Promise((r) => setTimeout(r, 1000 * consecutiveFailures));
       }
     }

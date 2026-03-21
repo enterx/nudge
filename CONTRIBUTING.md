@@ -160,7 +160,7 @@ Use GitHub Issues. Include:
 - macOS/Linux version
 - Claude Code version
 - Steps to reproduce
-- Relevant log output from `~/.nudge/nudge.log` or `~/.nudge/hook-debug.log`
+- Relevant log output from `~/.nudge/nudge.log` or `~/.nudge/mcp-debug.log`
 
 ## License
 

@@ -36,10 +36,10 @@ case "${ASK_MODE}" in
     CONTEXT="[Nudge] Ask mode: TERMINAL — Use standard AskUserQuestion for all questions. The user is at the terminal. Hooks will handle approval requests automatically."
     ;;
   nudge)
-    CONTEXT="[Nudge] Ask mode: NUDGE — Use standard AskUserQuestion for questions (hooks will automatically forward to mobile). The user may be away from the terminal."
+    CONTEXT="[Nudge] Ask mode: NUDGE — Use nudge_ask_user MCP tool for questions (recommended over AskUserQuestion due to hook event consistency issues). The user may be away from the terminal."
     ;;
   *)
-    CONTEXT="[Nudge] Ask mode: NUDGE (default) — Use standard AskUserQuestion for questions (hooks will automatically forward to mobile)."
+    CONTEXT="[Nudge] Ask mode: NUDGE (default) — Use nudge_ask_user MCP tool for questions (recommended over AskUserQuestion due to hook event consistency issues)."
     ;;
 esac
 

@@ -24,8 +24,7 @@ This policy covers the open-source Nudge plugin code in this repository. The Nud
 
 | Version | Supported |
 |---------|-----------|
-| 2.x     | Yes       |
-| 1.x     | No        |
+| 1.x     | Yes       |
 
 ## Security Design
 

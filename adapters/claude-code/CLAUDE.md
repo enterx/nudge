@@ -44,9 +44,10 @@ The active mode is injected via SessionStart hook.
 
 ### `nudge_notify` — Task Completion Notifications (MANDATORY)
 
-**There are NO automatic notification hooks.** Nudge relies entirely on Claude
-calling `nudge_notify` to inform the user. If you don't call it, the user gets
-**no notification at all**.
+**There are no automatic task-completion notification hooks.** Nudge relies
+entirely on Claude calling `nudge_notify` to inform the user of results.
+(Note: PreToolUse sends activity notifications for WebSearch/WebFetch
+automatically, but task outcomes are NOT auto-notified.)
 
 **You MUST call `nudge_notify` when:**
 - You finish a task or subtask
@@ -180,8 +181,9 @@ Code shows the terminal prompt and the PostToolUse hook resolves the mobile even
 - **SSE stream**: 520s per connection (`--max-time` / `AbortSignal.timeout`).
   Just under the Cloud Functions 540s execution limit.
 - **PermissionRequest hook**: 86400s (24 hours). The user may be AFK for hours.
-- **PreToolUse hook (AskUserQuestion)**: 86400s (24 hours). Same reason.
-- **Async hooks** (SessionEnd, Activity): 10-30s.
+  Also handles AskUserQuestion forwarding to mobile.
+- **PreToolUse hook** (Activity): 15s. Sends activity notifications for WebSearch/WebFetch.
+- **Async hooks** (PostToolUse, PostToolUseFailure, SessionEnd): 10-30s.
 - **SessionStart hook**: 5s (just reads config and outputs JSON).
 
 #### Reconnection protocol
@@ -191,7 +193,7 @@ The SSE client reconnects automatically when the 520s timeout fires:
 1. Connection times out after 520s (Cloud Functions limit)
 2. Client reconnects immediately to the same RTDB stream URL
 3. Up to 5 consecutive failures allowed before giving up
-4. On non-timeout errors: exponential backoff (1s, 2s, 4s...)
+4. On non-timeout errors: linear backoff (1s, 2s, 3s, 4s...)
 5. On max failures: throws error, hook exits 0, Claude Code falls back to terminal
 
 #### Error recovery

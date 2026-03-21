@@ -35,7 +35,7 @@ cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << 'MKJSON'
     {
       "name": "nudge",
       "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
-      "version": "2.0.0",
+      "version": "1.0.0",
       "author": { "name": "EnterX LLC" },
       "source": "./plugins/nudge",
       "category": "productivity",

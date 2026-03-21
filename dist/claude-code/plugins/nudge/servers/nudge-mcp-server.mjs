@@ -363,8 +363,8 @@ const TOOL_DEFINITION = {
   description:
     'Send a question to the user\'s phone via push notification. ' +
     'The user selects from provided options or types a free-text answer. ' +
-    'FALLBACK ONLY: In Claude Code, use standard AskUserQuestion instead — ' +
-    'hooks automatically forward to mobile. Only use this tool in environments without hook support.',
+    'Recommended for questions in nudge mode. MCP tools have reliable event lifecycle — ' +
+    'no consistency issues with hook-based AskUserQuestion cancellation (SIGKILL).',
   inputSchema: {
     type: 'object',
     properties: {
