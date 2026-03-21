@@ -450,28 +450,23 @@ async function main() {
       hookSpecificOutput: { hookEventName, decision: { behavior: 'allow' } },
     });
   } else if (action === 'answered' && isAskUser) {
-    // AskUserQuestion: user answered on mobile — deny the terminal dialog
-    // so it doesn't open, and pass the answer via message + additionalContext.
-    // 'deny' prevents the terminal prompt from appearing (user is on mobile).
-    // The message field content is shown to Claude as the denial reason,
-    // and additionalContext is injected into the conversation context.
-    // Previous bugs that caused deny to fail (clearPending, cross-session)
-    // have been fixed, so deny is now reliable.
+    // AskUserQuestion: user answered on mobile — use updatedInput to inject
+    // the answer directly, bypassing the terminal prompt cleanly.
+    // 'allow' + updatedInput.answers avoids "Denied by PermissionRequest hook".
     const selected = decision.selectedOptions || [];
     const freeText = decision.reason || '';
     const answerLabel = selected.length > 0 ? selected.join(', ') : freeText || 'No answer';
-    const questionText = askUserQuestion || 'question';
-    const answerContext = `User has answered your questions: "${questionText}"="${answerLabel}". You can now continue with the user's answers in mind.`;
     process.stderr.write(`Nudge: User answered — ${answerLabel}\n`);
+
+    // Build updatedInput with the answer injected into the questions/answers format
+    const questionText = askUserQuestion || 'question';
+    const answers = { [questionText]: answerLabel };
+    const updatedInput = { ...toolInput, answers };
 
     return exitWithOutput({
       hookSpecificOutput: {
         hookEventName,
-        decision: {
-          behavior: 'deny',
-          message: `Answered via Nudge: ${answerLabel}`,
-        },
-        additionalContext: answerContext,
+        decision: { behavior: 'allow', updatedInput },
       },
     });
   } else if (action === 'denied') {
