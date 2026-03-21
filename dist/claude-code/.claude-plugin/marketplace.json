@@ -1,0 +1,16 @@
+{
+  "name": "nudge-marketplace",
+  "description": "Nudge - Mobile push notifications for AI coding tool approvals",
+  "owner": { "name": "EnterX LLC" },
+  "plugins": [
+    {
+      "name": "nudge",
+      "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
+      "version": "1.0.0",
+      "author": { "name": "EnterX LLC" },
+      "source": "./plugins/nudge",
+      "category": "productivity",
+      "license": "MIT"
+    }
+  ]
+}
