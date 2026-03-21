@@ -290,7 +290,7 @@ expect_empty "no output when not configured" "${output}"
 write_config '{"token":"tok","askMode":"nudge"}'
 output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
 expect_contains "outputs NUDGE context" "NUDGE" "${output}"
-# hookEventName is Claude Code specific — skip for other adapters
+# hookEventName is adapter-specific — skip for adapters that omit it
 if echo "${output}" | grep -q "hookEventName"; then
   expect_contains "includes hookEventName SessionStart" "SessionStart" "${output}"
 else
@@ -342,7 +342,7 @@ HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" nudge >/dev/null 2>&1
 result=$(run_lib 'config_read "askMode"')
 expect_eq "sets askMode to nudge" "nudge" "${result}"
 
-# Invalid mode → graceful exit (exit 0 to trigger Claude Code terminal fallback)
+# Invalid mode → graceful exit (exit 0 to trigger host tool terminal fallback)
 HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" invalid_mode >/dev/null 2>&1
 exit_code=$?
 expect_exit "graceful exit for invalid mode" "0" "${exit_code}"

@@ -25,7 +25,7 @@ RETRY_DELAY_BASE=1     # Exponential backoff: 1s, 2s, 4s
 # Derive a deterministic session ID from the host tool's environment.
 # Must match the logic in core/lib/constants.mjs:getSessionId().
 # Priority: hook session_id → per-PPID file → unknown
-# Uses PPID (parent PID = Claude Code process) as key to avoid
+# Uses PPID (parent PID = host AI tool process) as key to avoid
 # cross-session overwrites when multiple sessions share a port.
 get_session_id() {
   local hook_session_id="${1:-}"
@@ -453,7 +453,7 @@ api_get() {
 }
 
 # --- Graceful Exit ---
-# Every failure mode exits 0 so Claude Code falls back to terminal prompt
+# Every failure mode exits 0 so the host tool falls back to terminal prompt
 
 graceful_exit() {
   local msg="${1:-}"

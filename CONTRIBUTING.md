@@ -5,7 +5,7 @@ Thank you for your interest in contributing. This document covers the setup, con
 ## Philosophy
 
 - **Zero npm dependencies.** Node.js built-ins only (`fs`, `path`, `os`, `readline`, `child_process`). If Node.js ships it, use it. Otherwise, implement it yourself.
-- **Graceful degradation.** Every hook exits 0 on failure. Claude Code must never get stuck because of Nudge.
+- **Graceful degradation.** Every hook exits 0 on failure. The host AI tool must never get stuck because of Nudge.
 - **No `jq` requirement in JavaScript.** Bash scripts may use `jq` when available but must provide a grep/sed fallback. Node.js scripts use `JSON.parse`.
 - **Bash portability.** Target bash 3.2+ (macOS default). Use POSIX-compatible constructs where possible.
 
@@ -13,7 +13,7 @@ Thank you for your interest in contributing. This document covers the setup, con
 
 - Node.js 18+ (for built-in `fetch`)
 - bash 3.2+
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with plugin support
+- A coding AI with plugin/hook support (e.g., [Claude Code](https://docs.anthropic.com/en/docs/claude-code))
 - [shellcheck](https://github.com/koalaman/shellcheck) (optional, for linting bash scripts)
 
 ## Dev setup
@@ -58,7 +58,7 @@ nudge-plugin/
 │   ├── nudge-*.sh              # Shared scripts (pair, mode, status, notify)
 │   └── tests/                  # Test suite
 ├── adapters/
-│   └── claude-code/            # Claude Code-specific files
+│   └── claude-code/            # Claude Code adapter
 │       ├── hooks/hooks.json    # Hook registration
 │       ├── .mcp.json           # MCP server registration
 │       ├── CLAUDE.md           # Context instructions
@@ -82,7 +82,7 @@ bash build.sh
 cd dist/claude-code/plugins/nudge && bash tests/run-all.sh
 ```
 
-The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required. Use `/test` in a live Claude Code session for end-to-end verification.
+The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required. Use `/test` in a live session for end-to-end verification.
 
 ## Code style
 
@@ -130,7 +130,7 @@ The test suite covers Node.js unit tests, MCP server tests, and shell script tes
 
 1. Create a subdirectory in `adapters/claude-code/skills/` (e.g., `skills/my-skill/`).
 2. Add a `SKILL.md` file with front matter: `name` (the skill suffix) and `description`.
-3. Body: instructions for Claude Code on what to do (run a script, call an MCP tool, etc.).
+3. Body: instructions for the AI tool on what to do (run a script, call an MCP tool, etc.).
 
 ## Commit conventions
 
@@ -158,7 +158,7 @@ Use GitHub Issues. Include:
 
 - Node.js version (`node --version`)
 - macOS/Linux version
-- Claude Code version
+- AI tool name and version (e.g., Claude Code)
 - Steps to reproduce
 - Relevant log output from `~/.nudge/nudge.log` or `~/.nudge/mcp-debug.log`
 

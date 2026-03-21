@@ -1,7 +1,7 @@
 #!/bin/bash
 # nudge-notify.sh — Notification hook handler for Nudge
 #
-# Receives notification events from Claude Code and forwards
+# Receives notification events from the coding AI and forwards
 # relevant ones to the user's phone via the Nudge API.
 #
 # Input (stdin JSON):
@@ -101,7 +101,7 @@ if [ -n "${ENCRYPTED_JSON}" ]; then
       --arg type "${NOTIFICATION_TYPE}" \
       --arg title "${TITLE}" \
       --arg sessionId "${SESSION_ID}" \
-      '{type: $type, title: $title, message: "Open app to view details", sessionId: $sessionId} + .')
+      '{type: $type, title: $title, message: "Securely delivered", sessionId: $sessionId} + .')
   else
     # Extract encrypted fields from JSON
     ENC_PAYLOAD=$(echo "${ENCRYPTED_JSON}" | grep -o '"encryptedPayload":"[^"]*"' | head -1 | sed 's/"encryptedPayload":"//;s/"$//')
@@ -109,7 +109,7 @@ if [ -n "${ENCRYPTED_JSON}" ]; then
     ENC_NOTIF=$(echo "${ENCRYPTED_JSON}" | grep -o '"encryptedNotif":"[^"]*"' | head -1 | sed 's/"encryptedNotif":"//;s/"$//')
     ENC_NOTIF_IV=$(echo "${ENCRYPTED_JSON}" | grep -o '"notifIv":"[^"]*"' | head -1 | sed 's/"notifIv":"//;s/"$//')
     SAFE_TITLE=$(_safe_json_string "${TITLE}")
-    BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"Open app to view details\",\"sessionId\":\"${SESSION_ID}\",\"encryptedPayload\":\"${ENC_PAYLOAD}\",\"iv\":\"${ENC_IV}\",\"encryptedNotif\":\"${ENC_NOTIF}\",\"notifIv\":\"${ENC_NOTIF_IV}\"}"
+    BODY="{\"type\":\"${NOTIFICATION_TYPE}\",\"title\":\"${SAFE_TITLE}\",\"message\":\"Securely delivered\",\"sessionId\":\"${SESSION_ID}\",\"encryptedPayload\":\"${ENC_PAYLOAD}\",\"iv\":\"${ENC_IV}\",\"encryptedNotif\":\"${ENC_NOTIF}\",\"notifIv\":\"${ENC_NOTIF_IV}\"}"
   fi
 else
   # Fallback: plaintext (no encryption key or Node.js not available)

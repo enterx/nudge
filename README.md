@@ -1,13 +1,13 @@
 # Nudge
 
-Approve AI coding tool actions from your phone -- with end-to-end encryption.
+Approve coding AI actions from your phone -- with end-to-end encryption.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Node: 18+](https://img.shields.io/badge/Node-18%2B-green.svg)
 ![Encryption: AES-256-GCM](https://img.shields.io/badge/Encryption-AES--256--GCM-brightgreen.svg)
 ![E2E: Zero Knowledge](https://img.shields.io/badge/E2E-Zero%20Knowledge-brightgreen.svg)
 
-Nudge sends permission requests and questions from your AI coding tool to your phone as push notifications. You approve or deny with a tap, and the tool continues -- no terminal required.
+Nudge sends permission requests and questions from your coding AI to your phone as push notifications. You approve or deny with a tap, and the tool continues -- no terminal required.
 
 **Your commands, code, and file paths are encrypted before leaving your machine.** The Nudge server only sees ciphertext -- it cannot read what you're approving. Push notifications are decrypted on-device via iOS Notification Service Extension / Android background handler. [See how it works.](#end-to-end-encryption)
 
@@ -15,7 +15,7 @@ Nudge sends permission requests and questions from your AI coding tool to your p
 
 ```
 ┌──────────────┐     hooks      ┌─────────────┐   encrypted   ┌──────────────┐
-│  Claude Code │  ──────────>   │ Nudge Plugin│  ──────────>  │              │
+│  Coding AI   │  ──────────>   │ Nudge Plugin│  ──────────>  │              │
 │              │                │   AES-256   │   HTTPS/TLS   │ Nudge Server │
 │              │  <──────────   │   encrypt   │  <──────────  │ (ciphertext  │
 └──────────────┘  allow/deny    └─────────────┘   SSE stream  │  only)       │
@@ -42,11 +42,11 @@ Nudge sends permission requests and questions from your AI coding tool to your p
 
 - **Node.js 18+** (uses built-in `fetch`)
 - **Nudge mobile app** installed on your phone
-- **Claude Code**
+- **Coding AI with plugin support** (e.g., Claude Code)
 
 ## Installation
 
-In Claude Code:
+### Claude Code
 ```
 /plugin marketplace add enterx/nudge-plugin
 /plugin install nudge
@@ -126,7 +126,7 @@ Send a one-way notification (fire-and-forget). Does not wait for a response.
 
 The PermissionRequest hook also intercepts `AskUserQuestion` and forwards it to
 mobile. However, this hook-based approach has **known event consistency issues**:
-Claude Code sends SIGKILL to hook processes on cancellation (e.g., user presses
+Some AI tools send SIGKILL to hook processes on cancellation (e.g., user presses
 Escape), which cannot be caught — the hook has no opportunity to dismiss the
 mobile card, leaving it in a pending state.
 
@@ -182,7 +182,7 @@ nudge-plugin/
 │   ├── nudge-*.sh              # Shared scripts (pair, mode, status, notify)
 │   └── tests/                  # Test suite
 ├── adapters/
-│   └── claude-code/            # Claude Code-specific files
+│   └── claude-code/            # Claude Code adapter
 │       ├── hooks/hooks.json    # Hook registration
 │       ├── .mcp.json           # MCP server registration
 │       ├── CLAUDE.md           # Context instructions
@@ -199,7 +199,7 @@ nudge-plugin/
 bash build.sh
 ```
 
-This assembles a self-contained package in `dist/` by combining `core/` with the Claude Code adapter.
+This assembles a self-contained package in `dist/` by combining `core/` with the adapter (currently Claude Code).
 
 ## Running tests
 

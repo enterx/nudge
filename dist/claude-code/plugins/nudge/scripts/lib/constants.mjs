@@ -20,8 +20,8 @@ export const CONFIG_PATH =
 
 export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
-// Per-session file keyed by parent PID (= Claude Code process PID).
-// Both hooks and MCP server are spawned by the same Claude Code process,
+// Per-session file keyed by parent PID (= host AI tool process PID).
+// Both hooks and MCP server are spawned by the same parent process,
 // so process.ppid is the shared unique key. This avoids the port-reuse
 // problem where multiple sessions share CLAUDE_CODE_SSE_PORT.
 const ppid = process.ppid || '';
@@ -66,7 +66,7 @@ export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
  * per-port file (written by SessionStart/PermissionRequest hook for MCP) →
  * cc-PORT fallback → random UUID.
  *
- * Hooks always receive session_id from Claude Code, so they use that directly.
+ * Hooks always receive session_id from the host tool, so they use that directly.
  * MCP server has no hook input, so it reads from the per-port file.
  *
  * @param {string} [hookSessionId] - session_id from hook input

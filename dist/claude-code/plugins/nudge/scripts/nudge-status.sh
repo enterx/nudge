@@ -14,7 +14,7 @@ echo ""
 if ! config_exists; then
   echo "Status:  Not paired"
   echo ""
-  echo "Run /nudge:pair to connect your phone."
+  echo "Run /pair to connect your phone."
   exit 0
 fi
 
@@ -56,7 +56,7 @@ else
   AUTH_CHECK=$(api_get "status" "${TOKEN}") || {
     echo "Token may be expired"
     echo ""
-    echo "Try re-pairing with /nudge:pair"
+    echo "Try re-pairing with /pair"
     exit 0
   }
   echo "Valid"

@@ -1,10 +1,10 @@
 #!/bin/bash
-# build.sh — Assembles self-contained dist/ package for Claude Code
+# build.sh — Assembles self-contained dist/ packages per adapter
 #
 # Usage: bash build.sh
 #
 # Produces:
-#   dist/claude-code/  — Installable Claude Code plugin
+#   dist/claude-code/  — Installable plugin for Claude Code
 
 set -euo pipefail
 

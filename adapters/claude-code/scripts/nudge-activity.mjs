@@ -83,7 +83,7 @@ async function main() {
       iv: full.iv,
       encryptedNotif: notif.encryptedPayload,
       notifIv: notif.iv,
-      body: 'Open app to view details',
+      body: 'Securely delivered',
     };
   } else {
     payload = {
