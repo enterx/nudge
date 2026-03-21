@@ -55,20 +55,20 @@ In Claude Code:
 ## Quick start
 
 ```
-1. /nudge:pair     → Generates a code. Enter it in the Nudge app.
+1. /pair     → Generates a code. Enter it in the Nudge app.
 2. Start coding    → Permission prompts appear on your phone.
-3. /nudge:test     → Send a test notification to verify delivery.
+3. /test     → Send a test notification to verify delivery.
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/nudge:pair` | Pair your phone. Generates a pairing code. |
-| `/nudge:test` | Send a test notification to verify push delivery. |
-| `/nudge:status` | Check connection status, token validity, and server health. |
-| `/nudge:afk` | Switch to mobile mode — questions go to your phone. |
-| `/nudge:desk` | Switch to terminal mode — questions stay in the terminal. |
+| `/pair` | Pair your phone. Generates a pairing code. |
+| `/test` | Send a test notification to verify push delivery. |
+| `/status` | Check connection status, token validity, and server health. |
+| `/afk` | Switch to mobile mode — questions go to your phone. |
+| `/desk` | Switch to terminal mode — questions stay in the terminal. |
 
 ## MCP tools
 
@@ -143,7 +143,7 @@ Every hook exits with code 0 on failure. The AI tool falls back to its built-in 
 
 ### Config file
 
-Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudge:pair`.
+Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair`.
 
 ```json
 {
@@ -169,7 +169,7 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/nudg
 - **`nudge`** (default): Questions go to your phone via `nudge_ask_user`.
 - **`terminal`**: Questions stay in the terminal.
 
-Toggle with `/nudge:afk` or `/nudge:desk`.
+Toggle with `/afk` or `/desk`.
 
 ## Repository structure
 
@@ -249,7 +249,7 @@ Nudge is **zero-knowledge by design**. All sensitive data is encrypted with **AE
 ### How it works
 
 ```
-1. /nudge:pair generates a random AES-256 key
+1. /pair generates a random AES-256 key
 2. Key is wrapped with PBKDF2(pairing_code, 600k iterations)
 3. Wrapped key is uploaded — server can't unwrap it (code expires in 10 min)
 4. Mobile app unwraps the key using the same pairing code

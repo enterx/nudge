@@ -125,12 +125,12 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
       fi
 
       echo ""
-      echo "Paired! Run /nudge:test to verify."
+      echo "Paired! Run /test to verify."
       exit 0
       ;;
     "expired")
       echo ""
-      echo "Pairing code expired. Run /nudge:pair again."
+      echo "Pairing code expired. Run /pair again."
       exit 1
       ;;
     "pending")
@@ -145,6 +145,6 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
 done
 
 echo ""
-echo "Timed out waiting for pairing. Run /nudge:pair to try again."
+echo "Timed out waiting for pairing. Run /pair to try again."
 
 exit 1

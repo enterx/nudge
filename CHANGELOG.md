@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `nudge_ask_user`: Send questions with selectable options to the user's phone.
   - `nudge_approve`: Send approval requests (Approve/Deny) to the user's phone.
   - `nudge_notify`: Send one-way status notifications (fire-and-forget).
-- **Skills**: `/nudge:pair`, `/nudge:test`, `/nudge:status`, `/nudge:afk`, `/nudge:desk`.
+- **Skills**: `/pair`, `/test`, `/status`, `/afk`, `/desk`.
 - **End-to-end encryption**: AES-256-GCM encryption with PBKDF2 key wrapping during pairing. Zero-knowledge server design.
 - **`SECURITY.md`**: Vulnerability reporting policy and security design documentation.
 - **Privacy & data handling** section in README.

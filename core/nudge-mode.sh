@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/lib.sh"
 # --- Check if configured ---
 
 if ! config_exists; then
-  echo "❌ Nudge is not configured. Run /nudge:pair first."
+  echo "❌ Nudge is not configured. Run /pair first."
   exit 0
 fi
 
@@ -38,7 +38,7 @@ if [ -z "${NEW_MODE}" ]; then
     echo "  ○ terminal  — Questions stay in terminal"
   fi
   echo ""
-  echo "Usage: /nudge:afk (mobile)   or   /nudge:desk (terminal)"
+  echo "Usage: /afk (mobile)   or   /desk (terminal)"
   exit 0
 fi
 
