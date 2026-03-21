@@ -2,7 +2,7 @@
 # nudge-scripts.test.sh — Tests for Nudge bash hook scripts
 #
 # Tests lib.sh unit functions and integration behavior of:
-#   nudge-session-start.sh, nudge-mode.sh, nudge-notify.sh, nudge-session-end.sh
+#   nudge-session-start.sh, nudge-notify.sh, nudge-session-end.sh
 #
 # Does NOT test nudge-hook.sh (requires live SSE server) or network paths.
 # Run: bash nudge-scripts.test.sh
@@ -312,40 +312,6 @@ expect_contains "defaults to NUDGE when askMode absent" "NUDGE" "${output}"
 write_config '{"token":"tok","askMode":"unknown_value"}'
 output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
 expect_contains "falls back to NUDGE for unknown askMode" "NUDGE" "${output}"
-
-# ============================================================
-# nudge-mode.sh
-# ============================================================
-
-echo ""
-echo "nudge-mode.sh"
-
-# Not configured
-remove_config
-output=$(HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" 2>/dev/null)
-expect_contains "shows not-configured message" "pair" "${output}"
-
-# Display current mode (no args)
-write_config '{"token":"tok","askMode":"nudge"}'
-output=$(HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" 2>/dev/null)
-expect_contains "displays current mode" "nudge" "${output}"
-
-# Set to terminal
-write_config '{"token":"tok","askMode":"nudge"}'
-HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" terminal >/dev/null 2>&1
-result=$(run_lib 'config_read "askMode"')
-expect_eq "sets askMode to terminal" "terminal" "${result}"
-
-# Set to nudge
-write_config '{"token":"tok","askMode":"terminal"}'
-HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" nudge >/dev/null 2>&1
-result=$(run_lib 'config_read "askMode"')
-expect_eq "sets askMode to nudge" "nudge" "${result}"
-
-# Invalid mode → graceful exit (exit 0 to trigger host tool terminal fallback)
-HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-mode.sh" invalid_mode >/dev/null 2>&1
-exit_code=$?
-expect_exit "graceful exit for invalid mode" "0" "${exit_code}"
 
 # ============================================================
 # nudge-notify.sh

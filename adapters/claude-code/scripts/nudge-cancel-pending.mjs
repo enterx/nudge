@@ -4,9 +4,10 @@
  *
  * When a tool completes (or fails/is denied), resolves any pending mobile events
  * for this session with the correct action and response data:
- *   - PostToolUse (matching toolUseId)  → approved  + reason "Approved in terminal"
- *   - PostToolUse (stale toolUseId)     → denied    + reason "Denied in terminal"
- *   - PostToolUseFailure                → denied    + reason "Denied in terminal"
+ *   - PostToolUse (matching toolUseId)  → approved   + reason "Approved in terminal"
+ *   - PostToolUse (stale toolUseId)     → cancelled + reason "Cancelled in terminal"
+ *   - PostToolUseFailure + stdin-close  → denied    + reason "Denied in terminal"
+ *   - PostToolUseFailure + SIGKILL      → cancelled + reason "Cancelled in terminal"
  *   - PostToolUse (elicitation)         → answered  + selectedOptions/reason from tool_response
  *
  * When a user denies a tool via Terminal (No/Escape), Claude Code does NOT fire
@@ -24,7 +25,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFileSync, unlinkSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getSessionId } from './lib/constants.mjs';
@@ -149,10 +150,19 @@ async function main() {
       try { unlinkSync(filePath); } catch { /* ignore */ }
 
       // Determine the correct action and payload
+      //
+      // For PostToolUseFailure (isFailure=true), distinguish Terminal No vs Escape:
+      //   - Terminal No: hook receives stdin-close → writes marker file → 'denied'
+      //   - Escape: Claude Code sends SIGKILL → no marker file → 'cancelled'
+      // The marker file is written by nudge-hook.mjs in the stdin-close handler.
+      const stdinCloseMarker = join(nudgeDir, `stdin-close-${eventId}`);
+      const wasStdinClose = existsSync(stdinCloseMarker);
+      try { unlinkSync(stdinCloseMarker); } catch { /* may not exist */ }
+
       let body;
       if (isStaleByToolId) {
-        // toolUseId mismatch — definitely stale
-        body = { action: 'denied', reason: 'Denied in terminal' };
+        // toolUseId mismatch — definitely stale (orphaned by SIGKILL or previous tool)
+        body = { action: 'cancelled', reason: 'Cancelled in terminal' };
       } else if (pattern === 'elicitation') {
         const answerData = extractAskUserAnswer(hookData);
         body = {
@@ -161,7 +171,13 @@ async function main() {
           ...(answerData.selectedOptions && { selectedOptions: answerData.selectedOptions }),
         };
       } else if (isFailure) {
-        body = { action: 'denied', reason: 'Denied in terminal' };
+        if (wasStdinClose) {
+          // Terminal No: user explicitly denied
+          body = { action: 'denied', reason: 'Denied in terminal' };
+        } else {
+          // Escape (SIGKILL): user cancelled, not denied
+          body = { action: 'cancelled', reason: 'Cancelled in terminal' };
+        }
       } else {
         body = { action: 'approved', reason: 'Approved in terminal' };
       }

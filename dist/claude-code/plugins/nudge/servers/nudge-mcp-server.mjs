@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Nudge MCP Server — nudge_ask_user, nudge_approve, nudge_notify tools
+ * Nudge MCP Server — nudge_ask_user, nudge_approve, nudge_notify,
+ *   nudge_status, nudge_mode, nudge_pair, nudge_pair_wait tools
  *
  * Sends questions/approvals to the user's phone via push notification.
  * The user responds on their phone, and the answer is returned to Claude via SSE.
@@ -9,24 +10,26 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 import {
   PROVIDER,
   LAST_NOTIFY_PATH,
+  NUDGE_CONFIG_DIR,
   SESSION_NAME_PATH,
   SERVER_NAME,
   SERVER_VERSION,
   PROTOCOL_VERSION,
+  API_TIMEOUT_MS,
   getSessionId,
 } from '../scripts/lib/constants.mjs';
 import { createLogger } from '../scripts/lib/logger.mjs';
-import { readConfig, getApiUrl } from '../scripts/lib/config.mjs';
+import { readConfig, getApiUrl, writeConfig, updateConfigKey, deleteConfig } from '../scripts/lib/config.mjs';
 import { getValidToken } from '../scripts/lib/token-utils.mjs';
-import { apiPost } from '../scripts/lib/api.mjs';
+import { apiPost, apiGet } from '../scripts/lib/api.mjs';
 import { waitForDecision } from '../scripts/lib/sse.mjs';
-import { encryptFields } from '../scripts/lib/crypto.mjs';
+import { encryptFields, generateEncryptionKey, deriveWrappingKey, wrapKey } from '../scripts/lib/crypto.mjs';
 const { log: debugLog } = createLogger('mcp-debug');
 
 // Read session ID fresh every time — the file is updated by hooks when a new
@@ -356,6 +359,215 @@ async function handleNudgeNotify(args) {
   };
 }
 
+// --- MCP Tool: nudge_status ---
+
+async function handleNudgeStatus() {
+  const config = readConfig();
+
+  if (!config) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({
+        paired: false,
+        message: 'Not paired. Run /pair to connect your phone.',
+      }) }],
+    };
+  }
+
+  const apiUrl = getApiUrl(config);
+  const result = {
+    paired: true,
+    userId: config.userId || 'unknown',
+    pairingCode: config.pairingCode || 'unknown',
+    server: apiUrl,
+    askMode: config.askMode || 'nudge',
+  };
+
+  // Check server connectivity
+  try {
+    const health = await apiGet(apiUrl, 'status');
+    result.serverStatus = health.status === 'ok' ? 'Connected' : `Error (${health.status})`;
+  } catch {
+    result.serverStatus = 'Unreachable';
+  }
+
+  // Check token validity
+  if (!config.token) {
+    result.authStatus = 'No token';
+  } else {
+    try {
+      const validToken = await getValidToken(config);
+      result.authStatus = validToken ? 'Valid' : 'Token may be expired';
+    } catch {
+      result.authStatus = 'Token may be expired';
+    }
+  }
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result) }],
+  };
+}
+
+// --- MCP Tool: nudge_mode ---
+
+async function handleNudgeMode(args) {
+  const config = readConfig();
+  if (!config) {
+    throw new Error('Nudge is not configured. Run /pair first.');
+  }
+
+  const currentMode = config.askMode || 'nudge';
+  const newMode = args.mode;
+
+  if (!newMode) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({
+        currentMode,
+        availableModes: ['nudge', 'terminal'],
+      }) }],
+    };
+  }
+
+  if (newMode !== 'nudge' && newMode !== 'terminal') {
+    throw new Error('mode must be "nudge" or "terminal"');
+  }
+
+  updateConfigKey('askMode', newMode);
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      previousMode: currentMode,
+      currentMode: newMode,
+      message: newMode === 'nudge'
+        ? 'Questions will now be sent to your mobile device.'
+        : 'Questions will now appear in the terminal.',
+    }) }],
+  };
+}
+
+// --- MCP Tool: nudge_pair ---
+
+async function handleNudgePair() {
+  // Clear old config and log
+  deleteConfig();
+  try { unlinkSync(`${NUDGE_CONFIG_DIR}/nudge.log`); } catch { /* ignore */ }
+
+  const apiUrl = getApiUrl(null);
+
+  // Generate pairing code
+  const pairResp = await apiPost(apiUrl, 'pairGenerate', {});
+
+  const pairingCode = pairResp.pairingCode;
+  const token = pairResp.token;
+  const refreshToken = pairResp.refreshToken || '';
+  const apiKey = pairResp.apiKey || '';
+  const pairId = pairResp.pairId;
+
+  if (!pairingCode || !token) {
+    throw new Error('Could not generate pairing code.');
+  }
+
+  // Set up E2E encryption
+  let encryptionKey = '';
+  try {
+    const key = generateEncryptionKey();
+    const wrappingKey = deriveWrappingKey(pairingCode, pairId);
+    const { wrappedKey, wrappingIv } = wrapKey(key, wrappingKey);
+
+    const resp = await fetch(`${apiUrl}/pairKeyExchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ wrappedKey, wrappingIv }),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+
+    if (resp.ok) {
+      encryptionKey = key;
+    }
+  } catch {
+    // Continue without encryption
+  }
+
+  // Save pending config (userId will be set by nudge_pair_wait on success)
+  writeConfig({
+    token,
+    refreshToken,
+    apiKey,
+    userId: '',
+    apiUrl,
+    pairingCode,
+    encryptionKey,
+  });
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      pairingCode,
+      expiresInMinutes: 10,
+      message: 'Enter this code in the Nudge app on your phone.',
+    }) }],
+  };
+}
+
+// --- MCP Tool: nudge_pair_wait ---
+
+async function handleNudgePairWait() {
+  const config = readConfig();
+  if (!config?.pairingCode) {
+    throw new Error('No pending pairing. Run /pair first.');
+  }
+
+  const rawCode = config.pairingCode.replace(/-/g, '');
+  const token = config.token;
+  const apiUrl = getApiUrl(config);
+
+  const POLL_INTERVAL = 3_000;
+  const MAX_POLLS = 200; // 200 × 3s = 10 minutes
+
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+    let verifyResp;
+    try {
+      verifyResp = await apiPost(apiUrl, 'pairVerify', { code: rawCode }, token);
+    } catch {
+      continue;
+    }
+
+    if (verifyResp.status === 'paired') {
+      const userId = verifyResp.userId;
+      if (!userId) {
+        throw new Error('Incomplete pairing response from server.');
+      }
+      updateConfigKey('userId', userId);
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          paired: true,
+          message: 'Paired! Run /test to verify.',
+        }) }],
+      };
+    }
+
+    if (verifyResp.status === 'expired') {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          paired: false,
+          message: 'Pairing code expired. Run /pair again.',
+        }) }],
+      };
+    }
+  }
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      paired: false,
+      message: 'Timed out waiting for pairing. Run /pair again.',
+    }) }],
+  };
+}
+
 // --- MCP Protocol ---
 
 const TOOL_DEFINITION = {
@@ -507,6 +719,60 @@ const NOTIFY_TOOL_DEFINITION = {
   },
 };
 
+const STATUS_TOOL_DEFINITION = {
+  name: 'nudge_status',
+  description:
+    'Check Nudge connection and configuration status. ' +
+    'Returns pairing state, server connectivity, and auth token validity.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+};
+
+const MODE_TOOL_DEFINITION = {
+  name: 'nudge_mode',
+  description:
+    'Get or set the Nudge ask mode. ' +
+    'Without "mode" parameter, returns current mode. ' +
+    'With "mode" set to "nudge" or "terminal", switches the mode.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      mode: {
+        type: 'string',
+        enum: ['nudge', 'terminal'],
+        description:
+          'The mode to switch to. "nudge" sends questions to mobile, ' +
+          '"terminal" keeps questions in the terminal. Omit to check current mode.',
+      },
+    },
+  },
+};
+
+const PAIR_TOOL_DEFINITION = {
+  name: 'nudge_pair',
+  description:
+    'Start the device pairing flow. Generates a pairing code and sets up E2E encryption. ' +
+    'Returns the pairing code for the user to enter in the Nudge mobile app. ' +
+    'After showing the code to the user, call nudge_pair_wait to wait for completion.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+};
+
+const PAIR_WAIT_TOOL_DEFINITION = {
+  name: 'nudge_pair_wait',
+  description:
+    'Wait for the pairing flow to complete. Polls the server until the mobile device ' +
+    'claims the pairing code (up to 10 minutes). Must be called after nudge_pair.',
+  inputSchema: {
+    type: 'object',
+    properties: {},
+  },
+};
+
 function handleInitialize(id) {
   return {
     jsonrpc: '2.0',
@@ -529,7 +795,11 @@ function handleToolsList(id) {
     jsonrpc: '2.0',
     id,
     result: {
-      tools: [TOOL_DEFINITION, APPROVE_TOOL_DEFINITION, NOTIFY_TOOL_DEFINITION],
+      tools: [
+        TOOL_DEFINITION, APPROVE_TOOL_DEFINITION, NOTIFY_TOOL_DEFINITION,
+        STATUS_TOOL_DEFINITION, MODE_TOOL_DEFINITION,
+        PAIR_TOOL_DEFINITION, PAIR_WAIT_TOOL_DEFINITION,
+      ],
     },
   };
 }
@@ -538,6 +808,10 @@ const TOOL_HANDLERS = {
   nudge_ask_user: handleNudgeAskUser,
   nudge_approve: handleNudgeApprove,
   nudge_notify: handleNudgeNotify,
+  nudge_status: handleNudgeStatus,
+  nudge_mode: handleNudgeMode,
+  nudge_pair: handleNudgePair,
+  nudge_pair_wait: handleNudgePairWait,
 };
 
 async function handleToolsCall(id, params) {

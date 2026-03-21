@@ -3,7 +3,9 @@ name: status
 description: "Check Nudge connection and configuration status"
 ---
 
-Nudge status:
-!`bash "${CLAUDE_PLUGIN_ROOT}/scripts/nudge-status.sh"`
+Check the Nudge connection and configuration status by calling the `mcp__plugin_nudge_nudge-mcp__nudge_status` tool.
 
-Summarize the status above for the user.
+Summarize the result for the user:
+- If not paired: Tell them to run /pair
+- If paired: Show user ID, pairing code, server status, auth status, and current ask mode
+- If server is unreachable or auth is invalid: Suggest running /pair to re-pair

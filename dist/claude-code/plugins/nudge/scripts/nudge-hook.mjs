@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
+
 import { PROVIDER, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
@@ -231,8 +232,10 @@ async function main() {
 
   // --- Clean up ALL orphaned pending events ---
   // When a new PermissionRequest fires, any remaining pending files are from
-  // previously denied/escaped tools (approved tools are resolved by PostToolUse
-  // or SSE before the next PermissionRequest fires). Mark them as denied.
+  // previously escaped tools (SIGKILL — hook couldn't clean up) or orphaned events.
+  // Approved tools are resolved by PostToolUse or SSE before the next PermissionRequest.
+  // Terminal No is resolved by PostToolUseFailure (stdin-close marker).
+  // Remaining orphans are from Escape (SIGKILL) → mark as 'cancelled'.
   try {
     const nudgeDir = join(homedir(), '.nudge');
     const prefix = `pending-${sessionId}-`;
@@ -243,9 +246,11 @@ async function main() {
       const filePath = join(nudgeDir, file);
       try {
         const pending = JSON.parse(readFileSync(filePath, 'utf-8'));
-        const action = pending.pattern === 'elicitation' ? 'cancelled' : 'denied';
-        const reason = pending.pattern === 'elicitation' ? 'Cancelled (orphaned)' : 'Denied in terminal';
+        const action = 'cancelled';
+        const reason = 'Cancelled in terminal';
         unlinkSync(filePath);
+        // Also clean up any leftover stdin-close marker for this event
+        try { unlinkSync(join(nudgeDir, `stdin-close-${pending.eventId}`)); } catch {}
         fetch(`${apiUrl}/eventsRespond/${pending.eventId}/respond`, {
           method: 'POST',
           headers: {
@@ -389,7 +394,14 @@ async function main() {
   // Do NOT cancel the backend event — only SIGINT/SIGTERM/SIGHUP mean user-initiated cancel.
   // Leave the pending file intact so PostToolUse can resolve the event with the
   // actual tool_response data (e.g., AskUserQuestion answers).
+  //
+  // Write a stdin-close marker file so PostToolUseFailure can distinguish
+  // Terminal No (stdin close → marker exists → 'denied') from
+  // Escape (SIGKILL → no marker → 'cancelled').
   process.stdin.on('close', () => {
+    // Write marker so PostToolUseFailure can distinguish Terminal No (stdin-close)
+    // from Escape (SIGKILL — no marker written because process is killed instantly).
+    try { writeFileSync(join(homedir(), '.nudge', `stdin-close-${eventId}`), ''); } catch {}
     process.exit(0);
   });
   process.stdin.on('end', () => {

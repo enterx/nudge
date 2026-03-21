@@ -41,3 +41,30 @@ export async function apiPost(apiUrl, endpoint, body, token) {
 
   return resp.json();
 }
+
+/**
+ * GET a Nudge API endpoint.
+ *
+ * @param {string} apiUrl  - Base URL
+ * @param {string} endpoint - Endpoint path (e.g. 'status')
+ * @param {string} [token] - Bearer token (optional)
+ * @returns {Promise<object>} Parsed JSON response
+ */
+export async function apiGet(apiUrl, endpoint, token) {
+  const resp = await fetch(`${apiUrl}/${endpoint}`, {
+    method: 'GET',
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => '');
+    const err = new Error(`HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+    err.status = resp.status;
+    throw err;
+  }
+
+  return resp.json();
+}
