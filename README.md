@@ -55,20 +55,20 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 ## Quick start
 
 ```
-1. /pair     → Generates a code. Enter it in the Nudge app.
-2. Start coding    → Permission prompts appear on your phone.
-3. /test     → Send a test notification to verify delivery.
+1. /pair-nudge   → Generates a code. Enter it in the Nudge app.
+2. Start coding   → Permission prompts appear on your phone.
+3. /test-nudge   → Send a test notification to verify delivery.
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/pair` | Pair your phone. Generates a pairing code. |
-| `/test` | Send a test notification to verify push delivery. |
-| `/status` | Check connection status, token validity, and server health. |
-| `/afk` | Switch to mobile mode — questions go to your phone. |
-| `/desk` | Switch to terminal mode — questions stay in the terminal. |
+| `/pair-nudge` | Pair your phone. Generates a pairing code. |
+| `/test-nudge` | Send a test notification to verify push delivery. |
+| `/status-nudge` | Check connection status, token validity, and server health. |
+| `/afk-nudge` | Switch to mobile mode — questions go to your phone. |
+| `/desk-nudge` | Switch to terminal mode — questions stay in the terminal. |
 
 ## MCP tools
 
@@ -113,7 +113,7 @@ Send a one-way notification (fire-and-forget). Does not wait for a response.
 
 ### `nudge_status`
 
-Check connection/config status. Also handles mode switching via the `mode` parameter. Used by `/status`, `/afk`, and `/desk` skills.
+Check connection/config status. Also handles mode switching via the `mode` parameter. Used by `/status-nudge`, `/afk-nudge`, and `/desk-nudge` skills.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -163,7 +163,7 @@ Every hook exits with code 0 on failure. The AI tool falls back to its built-in 
 
 ### Config file
 
-Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair`.
+Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair-nudge`.
 
 ```json
 {
@@ -189,7 +189,7 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair
 - **`nudge`** (default): Questions go to your phone via `nudge_ask_user`.
 - **`terminal`**: Questions stay in the terminal.
 
-Toggle with `/afk` or `/desk`.
+Toggle with `/afk-nudge` or `/desk-nudge`.
 
 ## Repository structure
 

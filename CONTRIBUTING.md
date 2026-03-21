@@ -82,7 +82,7 @@ bash build.sh
 cd dist/claude-code/plugins/nudge && bash tests/run-all.sh
 ```
 
-The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required. Use `/test` in a live session for end-to-end verification.
+The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required. Use `/test-nudge` in a live session for end-to-end verification.
 
 ## Code style
 

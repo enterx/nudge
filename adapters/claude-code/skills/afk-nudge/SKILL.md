@@ -1,5 +1,5 @@
 ---
-name: afk
+name: afk-nudge
 description: "Switch to mobile mode — questions and approvals go to your phone"
 ---
 

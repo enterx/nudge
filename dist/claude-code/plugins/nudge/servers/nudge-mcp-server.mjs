@@ -369,7 +369,7 @@ async function handleNudgeStatus(args) {
     return {
       content: [{ type: 'text', text: JSON.stringify({
         paired: false,
-        message: 'Not paired. Run /pair to connect your phone.',
+        message: 'Not paired. Run /pair-nudge to connect your phone.',
       }) }],
     };
   }
@@ -498,7 +498,7 @@ async function handleNudgePair() {
 async function handleNudgePairWait() {
   const config = readConfig();
   if (!config?.pairingCode) {
-    throw new Error('No pending pairing. Run /pair first.');
+    throw new Error('No pending pairing. Run /pair-nudge first.');
   }
 
   const rawCode = config.pairingCode.replace(/-/g, '');
@@ -528,7 +528,7 @@ async function handleNudgePairWait() {
       return {
         content: [{ type: 'text', text: JSON.stringify({
           paired: true,
-          message: 'Paired! Run /test to verify.',
+          message: 'Paired! Run /test-nudge to verify.',
         }) }],
       };
     }
@@ -537,7 +537,7 @@ async function handleNudgePairWait() {
       return {
         content: [{ type: 'text', text: JSON.stringify({
           paired: false,
-          message: 'Pairing code expired. Run /pair again.',
+          message: 'Pairing code expired. Run /pair-nudge again.',
         }) }],
       };
     }
@@ -546,7 +546,7 @@ async function handleNudgePairWait() {
   return {
     content: [{ type: 'text', text: JSON.stringify({
       paired: false,
-      message: 'Timed out waiting for pairing. Run /pair again.',
+      message: 'Timed out waiting for pairing. Run /pair-nudge again.',
     }) }],
   };
 }

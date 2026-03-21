@@ -1,5 +1,5 @@
 ---
-name: test
+name: test-nudge
 description: "Send a test push notification to your phone via Nudge"
 ---
 
@@ -13,4 +13,4 @@ Use the `mcp__plugin_nudge_nudge-mcp__nudge_approve` tool with the following par
 After the tool returns, show the result to the user:
 - If `approved: true` — report success: the user received and approved the test notification.
 - If `approved: false` — report that the user denied the test (but delivery itself worked).
-- If the tool errors — report the failure and suggest running `/status` or `/pair`.
+- If the tool errors — report the failure and suggest running `/status-nudge` or `/pair-nudge`.

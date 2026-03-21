@@ -1,5 +1,5 @@
 ---
-name: desk
+name: desk-nudge
 description: "Switch to terminal mode — questions stay in the terminal"
 ---
 
