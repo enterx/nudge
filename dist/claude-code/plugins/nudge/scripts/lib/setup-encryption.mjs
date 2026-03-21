@@ -2,7 +2,7 @@
 /**
  * setup-encryption.mjs — Generate and upload wrapped encryption key during pairing
  *
- * Called during pairing (by nudge_pair MCP tool or standalone).
+ * Called by nudge-pair.sh during the pairing flow.
  * Generates a random AES-256 key, wraps it with a key derived from the
  * pairing code (which both CLI and mobile know), and uploads the wrapped
  * key to the server. The server never sees the real encryption key.
