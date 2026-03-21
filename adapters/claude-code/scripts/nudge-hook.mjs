@@ -231,11 +231,10 @@ async function main() {
   const apiUrl = getApiUrl(config);
 
   // --- Clean up ALL orphaned pending events ---
-  // When a new PermissionRequest fires, any remaining pending files are from
-  // previously escaped tools (SIGKILL — hook couldn't clean up) or orphaned events.
-  // Approved tools are resolved by PostToolUse or SSE before the next PermissionRequest.
-  // Terminal No is resolved by PostToolUseFailure (stdin-close marker).
-  // Remaining orphans are from Escape (SIGKILL) → mark as 'cancelled'.
+  // Remaining pending files are from Escape or Terminal No (both use SIGKILL,
+  // hook couldn't clean up). Claude Code does NOT fire PostToolUseFailure for
+  // rejected tools, so orphan cleanup is the only resolution path.
+  // All orphans are marked as 'cancelled'.
   try {
     const nudgeDir = join(homedir(), '.nudge');
     const prefix = `pending-${sessionId}-`;
@@ -246,18 +245,14 @@ async function main() {
       const filePath = join(nudgeDir, file);
       try {
         const pending = JSON.parse(readFileSync(filePath, 'utf-8'));
-        const action = 'cancelled';
-        const reason = 'Cancelled in terminal';
         unlinkSync(filePath);
-        // Also clean up any leftover stdin-close marker for this event
-        try { unlinkSync(join(nudgeDir, `stdin-close-${pending.eventId}`)); } catch {}
         fetch(`${apiUrl}/eventsRespond/${pending.eventId}/respond`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${pending.token}`,
           },
-          body: JSON.stringify({ action, reason }),
+          body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled in terminal' }),
           signal: AbortSignal.timeout(5_000),
         }).catch(() => {});
       } catch { /* ignore individual file errors */ }
@@ -398,15 +393,12 @@ async function main() {
   // Write a stdin-close marker file so PostToolUseFailure can distinguish
   // Terminal No (stdin close → marker exists → 'denied') from
   // Escape (SIGKILL → no marker → 'cancelled').
-  process.stdin.on('close', () => {
-    // Write marker so PostToolUseFailure can distinguish Terminal No (stdin-close)
-    // from Escape (SIGKILL — no marker written because process is killed instantly).
-    try { writeFileSync(join(homedir(), '.nudge', `stdin-close-${eventId}`), ''); } catch {}
-    process.exit(0);
-  });
-  process.stdin.on('end', () => {
-    process.exit(0);
-  });
+  // stdin-close/end: terminal answered (Yes or No).
+  // Claude Code sends SIGKILL for both Terminal No and Escape, so these
+  // handlers rarely fire. When they do, just exit cleanly.
+  // The pending file is left intact for PostToolUse/PostToolUseFailure to resolve.
+  process.stdin.on('end', () => process.exit(0));
+  process.stdin.on('close', () => process.exit(0));
   process.on('disconnect', () => cancelAndExit('disconnect'));
 
   // Ensure stdin is resumed so 'close'/'end' events can fire.

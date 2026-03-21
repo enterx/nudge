@@ -25,7 +25,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, unlinkSync, readdirSync } from 'node:fs';
+import { readFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getSessionId } from './lib/constants.mjs';
@@ -149,16 +149,12 @@ async function main() {
       // Delete pending file before resolving to avoid duplicate responses
       try { unlinkSync(filePath); } catch { /* ignore */ }
 
-      // Determine the correct action and payload
+      // Determine the correct action and payload.
       //
-      // For PostToolUseFailure (isFailure=true), distinguish Terminal No vs Escape:
-      //   - Terminal No: hook receives stdin-close → writes marker file → 'denied'
-      //   - Escape: Claude Code sends SIGKILL → no marker file → 'cancelled'
-      // The marker file is written by nudge-hook.mjs in the stdin-close handler.
-      const stdinCloseMarker = join(nudgeDir, `stdin-close-${eventId}`);
-      const wasStdinClose = existsSync(stdinCloseMarker);
-      try { unlinkSync(stdinCloseMarker); } catch { /* may not exist */ }
-
+      // PostToolUseFailure fires for tool execution failures (not for user denials).
+      // Claude Code sends SIGKILL for both Terminal No and Escape, and does NOT
+      // fire PostToolUseFailure for rejected tools. So isFailure here means the
+      // tool was approved (terminal) but execution failed → send 'cancelled'.
       let body;
       if (isStaleByToolId) {
         // toolUseId mismatch — definitely stale (orphaned by SIGKILL or previous tool)
@@ -171,13 +167,8 @@ async function main() {
           ...(answerData.selectedOptions && { selectedOptions: answerData.selectedOptions }),
         };
       } else if (isFailure) {
-        if (wasStdinClose) {
-          // Terminal No: user explicitly denied
-          body = { action: 'denied', reason: 'Denied in terminal' };
-        } else {
-          // Escape (SIGKILL): user cancelled, not denied
-          body = { action: 'cancelled', reason: 'Cancelled in terminal' };
-        }
+        // Tool was approved but execution failed
+        body = { action: 'cancelled', reason: 'Cancelled in terminal' };
       } else {
         body = { action: 'approved', reason: 'Approved in terminal' };
       }
