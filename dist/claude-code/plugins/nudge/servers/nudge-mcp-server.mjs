@@ -338,7 +338,7 @@ async function handleNudgeNotify(args) {
             iv: encrypted.iv,
             encryptedNotif: encrypted.encryptedNotif,
             notifIv: encrypted.notifIv,
-            body: 'Securely delivered',
+            body: 'Decrypting...',
           }
         : {
             body,
