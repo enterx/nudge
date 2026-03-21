@@ -46,14 +46,9 @@ Nudge sends permission requests and questions from your AI coding tool to your p
 
 ## Installation
 
-```bash
-git clone https://github.com/enterx/nudge-plugin.git
-cd nudge-plugin && bash build.sh
+In Claude Code:
 ```
-
-Then in Claude Code:
-```
-/plugin marketplace add /path/to/nudge-plugin/dist/claude-code
+/plugin marketplace add enterx/nudge-plugin
 /plugin install nudge
 ```
 

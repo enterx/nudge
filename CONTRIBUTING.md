@@ -25,16 +25,17 @@ git clone https://github.com/enterx/nudge-plugin.git
 cd nudge-plugin
 ```
 
-2. Build and load the plugin in Claude Code:
+2. Load the plugin in Claude Code:
+
+```
+/plugin marketplace add /path/to/nudge-plugin
+/plugin install nudge
+```
+
+For development, rebuild after making changes to `core/` or `adapters/`:
 
 ```bash
 bash build.sh
-```
-
-Then in Claude Code:
-```
-/plugin marketplace add /path/to/nudge-plugin/dist/claude-code
-/plugin install nudge
 ```
 
 3. Make changes, rebuild, then restart Claude Code to pick up hook/MCP changes.

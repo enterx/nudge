@@ -22,8 +22,7 @@ npm-debug.log*
 # Runtime config (contains tokens)
 .nudge/
 
-# Build output
-dist/
+# Build output (dist/ is committed for direct plugin install)
 
 # Debug logs
 *.log

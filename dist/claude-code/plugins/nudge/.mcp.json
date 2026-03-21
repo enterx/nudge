@@ -1,0 +1,7 @@
+{
+  "nudge-mcp": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/nudge-mcp-server.mjs"],
+    "env": {}
+  }
+}
