@@ -7,5 +7,5 @@ Check the Nudge connection and configuration status by calling the `mcp__plugin_
 
 Summarize the result for the user:
 - If not paired: Tell them to run /pair-nudge
-- If paired: Show user ID, pairing code, server status, auth status, and current ask mode
+- If paired: Show plugin version, user ID, pairing code, server status, auth status, and current ask mode
 - If server is unreachable or auth is invalid: Suggest running /pair-nudge to re-pair

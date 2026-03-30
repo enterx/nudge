@@ -9,7 +9,7 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { PROVIDER } from './lib/constants.mjs';
+import { PROVIDER, SERVER_VERSION } from './lib/constants.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
@@ -79,6 +79,7 @@ async function main() {
     payload = {
       title: toolName,
       level: 'info',
+      pluginVersion: SERVER_VERSION,
       encryptedPayload: full.encryptedPayload,
       iv: full.iv,
       encryptedNotif: notif.encryptedPayload,
@@ -90,6 +91,7 @@ async function main() {
       title: description,
       body: body || description,
       level: 'info',
+      pluginVersion: SERVER_VERSION,
       ...(sessionName && { sessionName }),
     };
   }

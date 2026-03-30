@@ -177,6 +177,7 @@ async function handleNudgeAskUser(args, requestId) {
     'eventsCreate',
     {
       provider: PROVIDER,
+      pluginVersion: SERVER_VERSION,
       toolName: 'nudge_ask_user',
       pattern: 'elicitation',
       sessionId: getSessionIdLazy(),
@@ -250,6 +251,7 @@ async function handleNudgeApprove(args, requestId) {
     'eventsCreate',
     {
       provider: PROVIDER,
+      pluginVersion: SERVER_VERSION,
       toolName,
       pattern: 'approval',
       sessionId: getSessionIdLazy(),
@@ -331,6 +333,7 @@ async function handleNudgeNotify(args) {
     {
       title,
       level,
+      pluginVersion: SERVER_VERSION,
       sessionId: getSessionIdLazy(),
       ...(sessionName && { sessionName }),
       ...(encrypted
@@ -386,6 +389,7 @@ async function handleNudgeStatus(args) {
   const apiUrl = getApiUrl(config);
   const result = {
     paired: true,
+    pluginVersion: SERVER_VERSION,
     userId: config.userId || 'unknown',
     pairingCode: config.pairingCode || 'unknown',
     server: apiUrl,

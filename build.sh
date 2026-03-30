@@ -15,6 +15,15 @@ DIST="${REPO_ROOT}/dist"
 
 echo "Building Nudge plugin..."
 
+# Read version from single source of truth (core/lib/constants.mjs)
+NUDGE_VERSION=$(node -p "
+  const fs = require('fs');
+  const src = fs.readFileSync('${CORE}/lib/constants.mjs', 'utf8');
+  const m = src.match(/SERVER_VERSION\s*=\s*'([^']+)'/);
+  m ? m[1] : '1.0.0';
+")
+echo "  Version: ${NUDGE_VERSION}"
+
 # Clean
 rm -rf "${DIST}"
 
@@ -25,8 +34,8 @@ CC_DIST="${DIST}/claude-code/plugins/nudge"
 mkdir -p "${CC_DIST}/scripts/lib" "${CC_DIST}/servers" "${CC_DIST}/hooks" "${CC_DIST}/skills"
 mkdir -p "${DIST}/claude-code/.claude-plugin"
 
-# Marketplace wrapper
-cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << 'MKJSON'
+# Marketplace wrapper (version injected from constants.mjs)
+cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << MKJSON
 {
   "name": "nudge-marketplace",
   "description": "Nudge - Mobile push notifications for AI coding tool approvals",
@@ -35,7 +44,7 @@ cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << 'MKJSON'
     {
       "name": "nudge",
       "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
-      "version": "1.0.0",
+      "version": "${NUDGE_VERSION}",
       "author": { "name": "EnterX LLC" },
       "source": "./plugins/nudge",
       "category": "productivity",

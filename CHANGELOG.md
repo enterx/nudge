@@ -5,6 +5,14 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-30
+
+### Added
+
+- **Version exchange**: Plugin sends `pluginVersion` in all `eventsCreate` and `pushNotifyFn` payloads. Mobile app sends `appVersion` in responses. Enables future "please update" warnings when either side falls behind.
+- **`/status-nudge` shows plugin version**: Status output now includes `pluginVersion` field.
+- **Build-time version injection**: `build.sh` reads version from `core/lib/constants.mjs` (single source of truth) and injects it into `marketplace.json`.
+
 ## [1.0.0] - 2026-03-21
 
 ### Added
