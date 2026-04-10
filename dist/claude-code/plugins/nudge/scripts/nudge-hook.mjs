@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 
-import { PROVIDER, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
+import { PROVIDER, SERVER_VERSION, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
 import { readConfig, getApiUrl } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
@@ -296,6 +296,7 @@ async function main() {
 
   const payload = {
     provider: PROVIDER,
+    pluginVersion: SERVER_VERSION,
     toolName,
     pattern: isAskUser ? 'elicitation' : 'approval',
     sessionId,
