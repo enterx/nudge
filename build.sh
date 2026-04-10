@@ -25,8 +25,12 @@ CC_DIST="${DIST}/claude-code/plugins/nudge"
 mkdir -p "${CC_DIST}/scripts/lib" "${CC_DIST}/servers" "${CC_DIST}/hooks" "${CC_DIST}/skills"
 mkdir -p "${DIST}/claude-code/.claude-plugin"
 
-# Marketplace wrapper
-cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << 'MKJSON'
+# Read version from constants.mjs (single source of truth)
+PLUGIN_VERSION=$(grep "SERVER_VERSION" "${CORE}/lib/constants.mjs" | sed "s/.*'\(.*\)'.*/\1/")
+echo "  Version: ${PLUGIN_VERSION}"
+
+# Marketplace wrapper (version injected from constants.mjs)
+cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" <<MKJSON
 {
   "name": "nudge-marketplace",
   "description": "Nudge - Mobile push notifications for AI coding tool approvals",
@@ -35,7 +39,7 @@ cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" << 'MKJSON'
     {
       "name": "nudge",
       "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
-      "version": "1.0.0",
+      "version": "${PLUGIN_VERSION}",
       "author": { "name": "EnterX LLC" },
       "source": "./plugins/nudge",
       "category": "productivity",
