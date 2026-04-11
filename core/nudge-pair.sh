@@ -49,19 +49,12 @@ ENCRYPTION_KEY=$(printf '{"pairingCode":"%s","userId":"%s","token":"%s","apiUrl"
   ENCRYPTION_KEY=""
 }
 
-echo "  Code: ${PAIRING_CODE}  (expires 10 min)"
-echo ""
-echo "  Scan QR or enter code in the Nudge app."
-echo ""
-
 if command -v qrencode &>/dev/null; then
   qrencode -t UTF8 -m 2 "${PAIRING_CODE}"
-else
-  echo "  Tip: brew install qrencode for QR pairing."
+  echo ""
 fi
 
-echo ""
-echo "Waiting for pairing..."
+echo "  ▶ ${PAIRING_CODE} ◀  Enter in Nudge app."
 
 # --- Poll for pairing completion ---
 
