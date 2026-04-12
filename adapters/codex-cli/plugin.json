@@ -1,0 +1,14 @@
+{
+  "name": "nudge",
+  "version": "1.0.0",
+  "description": "Mobile push notifications for coding AI approvals. Approve or deny actions from your phone with end-to-end encryption.",
+  "author": { "name": "EnterX LLC" },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Nudge",
+    "shortDescription": "Approve coding AI actions from your phone",
+    "category": "Productivity"
+  }
+}

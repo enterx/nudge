@@ -1,0 +1,51 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NUDGE_PROVIDER=codex bash \"${NUDGE_CODEX_ROOT:-$HOME/.codex/plugins/nudge}/scripts/nudge-session-start.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NUDGE_PROVIDER=codex node \"${NUDGE_CODEX_ROOT:-$HOME/.codex/plugins/nudge}/scripts/nudge-hook.mjs\"",
+            "timeout": 86400
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NUDGE_PROVIDER=codex node \"${NUDGE_CODEX_ROOT:-$HOME/.codex/plugins/nudge}/scripts/nudge-cancel-pending.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "NUDGE_PROVIDER=codex bash \"${NUDGE_CODEX_ROOT:-$HOME/.codex/plugins/nudge}/scripts/nudge-session-end.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
