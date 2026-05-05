@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Mobile MCP tools for coding AI questions, approvals, and notifications with end-to-end encryption.",
   "author": { "name": "EnterX LLC" },
-  "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "skills": "./plugins/nudge/skills/",
+  "mcpServers": "./plugins/nudge/.mcp.json",
   "interface": {
     "displayName": "Nudge",
     "shortDescription": "Send coding AI questions and notifications to your phone",
