@@ -1,0 +1,21 @@
+{
+  "name": "nudge",
+  "interface": {
+    "displayName": "Nudge"
+  },
+  "plugins": [
+    {
+      "name": "nudge",
+      "description": "Send coding AI questions and notifications to your phone with end-to-end encryption.",
+      "version": "1.0.0",
+      "author": {
+        "name": "EnterX LLC"
+      },
+      "source": {
+        "source": "local",
+        "path": "./dist/codex-cli/plugins/nudge"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
