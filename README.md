@@ -42,7 +42,7 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 
 - **Node.js 18+** (uses built-in `fetch`)
 - **Nudge mobile app** installed on your phone
-- **Coding AI with plugin support** (e.g., Claude Code)
+- **Coding AI with plugin support** (e.g., Claude Code, Codex CLI)
 
 ## Installation
 
@@ -51,6 +51,20 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 /plugin marketplace add enterx/nudge-plugin
 /plugin install nudge
 ```
+
+### Codex CLI
+
+Codex CLI's hooks framework is still maturing — plugin-bundled hooks are
+opt-in (`[features].plugin_hooks = true`), `apply_patch` and MCP tool calls
+aren't reliably intercepted, and `PreToolUse` only honors `deny` decisions
+today. Until those gaps close, the Codex adapter ships as **MCP tools +
+skills only**: tool-call approvals continue to use Codex's built-in terminal
+flow, while questions, status updates, and "what next?" prompts are routed to
+your phone via the `nudge_ask_user` / `nudge_notify` MCP tools.
+
+Install the built `dist/codex-cli/plugins/nudge/` package wherever your Codex
+CLI loads plugins from (defaults to `~/.agents/plugins/nudge`; override with
+`NUDGE_CODEX_ROOT`).
 
 ## Quick start
 
@@ -72,7 +86,7 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 
 ## MCP tools
 
-The plugin exposes four tools via its MCP server. The AI tool calls these directly. Usage guidelines (when to call each tool, required behavior like always sending `nudge_notify` on task completion) are defined in the plugin's agent instructions file (e.g. `CLAUDE.md`), which is automatically loaded into the AI's context.
+The plugin exposes four tools via its MCP server. The AI tool calls these directly. Usage guidelines (when to call each tool, required behavior like always sending `nudge_notify` on task completion) are defined in the plugin's agent instructions file (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex CLI), which is automatically loaded into the AI's context.
 
 ### `nudge_ask_user`
 
@@ -122,6 +136,14 @@ Check connection/config status. Also handles mode switching via the `mode` param
 Pairing (`/pair-nudge`) is handled by a shell script (`nudge-pair.sh`) instead of an MCP tool, so QR codes can be displayed in the terminal.
 
 ## Hooks
+
+Hooks listed below are **Claude Code only**. Codex CLI exposes a hooks
+framework as well, but its current limitations (plugin hooks gated behind
+`[features].plugin_hooks`, unreliable interception of `apply_patch` / MCP
+tools, `deny`-only `PreToolUse` decisions) make it unsuitable for the Nudge
+approval flow today. The Codex adapter therefore registers no hooks and
+relies on MCP tools + Codex's built-in approval flow for shell commands and
+file edits.
 
 | Hook event | Script | Mode | Purpose |
 |------------|--------|------|---------|
@@ -193,15 +215,21 @@ nudge-plugin/
 │   ├── nudge-notify.sh          # Idle-prompt notification script
 │   └── tests/                  # Test suite
 ├── adapters/
-│   └── claude-code/            # Claude Code adapter
-│       ├── hooks/hooks.json    # Hook registration
-│       ├── .mcp.json           # MCP server registration
-│       ├── CLAUDE.md           # Context instructions
-│       ├── skills/             # Skill definitions
-│       └── scripts/            # Hook scripts (hook, activity, session)
+│   ├── claude-code/            # Claude Code adapter (hooks + MCP + skills)
+│   │   ├── hooks/hooks.json    # Hook registration
+│   │   ├── .mcp.json           # MCP server registration
+│   │   ├── CLAUDE.md           # Context instructions
+│   │   ├── skills/             # Skill definitions
+│   │   └── scripts/            # Hook scripts (hook, activity, session)
+│   └── codex-cli/              # Codex CLI adapter (MCP + skills only — no hooks)
+│       ├── plugin.json         # Codex plugin manifest
+│       ├── .mcp.json           # MCP server registration (NUDGE_PROVIDER=codex)
+│       ├── AGENTS.md           # Context instructions
+│       └── skills/             # Skill definitions
 ├── build.sh                    # Assembles dist/ from core + adapters
 └── dist/
-    └── claude-code/            # Build output (self-contained, installable)
+    ├── claude-code/            # Build output for Claude Code
+    └── codex-cli/              # Build output for Codex CLI
 ```
 
 ## Building
@@ -210,7 +238,7 @@ nudge-plugin/
 bash build.sh
 ```
 
-This assembles a self-contained package in `dist/` by combining `core/` with the adapter (currently Claude Code).
+This assembles self-contained packages in `dist/` by combining `core/` with each adapter (Claude Code and Codex CLI).
 
 ## Running tests
 
