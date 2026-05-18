@@ -66,17 +66,20 @@ skills only**: tool-call approvals continue to use Codex's built-in terminal
 flow, while questions, status updates, and "what next?" prompts are routed to
 your phone via the `nudge_ask_user` / `nudge_notify` MCP tools.
 
-Install from the checked-in `dist/codex-cli/` package. You do **not** need to
-run `build.sh`.
+Install from the Codex marketplace manifest in this repository. You do **not**
+need to run `build.sh`.
 
 ```bash
-mkdir -p ~/.agents/plugins
-rsync -a --delete dist/codex-cli/plugins/nudge/ ~/.agents/plugins/nudge/
+codex plugin marketplace add enterx/nudge-plugin
 ```
 
-If your Codex CLI plugin root is elsewhere, copy
-`dist/codex-cli/plugins/nudge/` to that plugin directory instead. For local
-development or testing, override the root with `NUDGE_CODEX_ROOT`.
+Then start Codex, run `/plugins`, find `nudge`, and enable it.
+
+For local development, register a checkout directly:
+
+```bash
+codex plugin marketplace add /path/to/nudge-plugin
+```
 
 ## Quick start
 
