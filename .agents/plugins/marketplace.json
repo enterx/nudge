@@ -13,7 +13,7 @@
       },
       "source": {
         "source": "local",
-        "path": "./dist/codex-cli/plugins/nudge"
+        "path": "./dist/codex-cli"
       },
       "category": "Productivity"
     }
