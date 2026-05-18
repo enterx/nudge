@@ -47,6 +47,10 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 ## Installation
 
 ### Claude Code
+
+Install from the published marketplace package. You do **not** need to run
+`build.sh`.
+
 ```
 /plugin marketplace add enterx/nudge-plugin
 /plugin install nudge
@@ -62,9 +66,17 @@ skills only**: tool-call approvals continue to use Codex's built-in terminal
 flow, while questions, status updates, and "what next?" prompts are routed to
 your phone via the `nudge_ask_user` / `nudge_notify` MCP tools.
 
-Install the built `dist/codex-cli/plugins/nudge/` package wherever your Codex
-CLI loads plugins from (defaults to `~/.agents/plugins/nudge`; override with
-`NUDGE_CODEX_ROOT`).
+Install from the checked-in `dist/codex-cli/` package. You do **not** need to
+run `build.sh`.
+
+```bash
+mkdir -p ~/.agents/plugins
+rsync -a --delete dist/codex-cli/plugins/nudge/ ~/.agents/plugins/nudge/
+```
+
+If your Codex CLI plugin root is elsewhere, copy
+`dist/codex-cli/plugins/nudge/` to that plugin directory instead. For local
+development or testing, override the root with `NUDGE_CODEX_ROOT`.
 
 ## Quick start
 
@@ -237,7 +249,10 @@ nudge-plugin/
 bash build.sh
 ```
 
-This assembles self-contained packages in `dist/` by combining `core/` with each adapter (Claude Code and Codex CLI).
+This is only needed when changing source files under `core/` or `adapters/`.
+It assembles self-contained packages in `dist/` by combining `core/` with each
+adapter (Claude Code and Codex CLI). Normal installation uses the checked-in
+`dist/` packages above and does not require a local build.
 
 ## Running tests
 
