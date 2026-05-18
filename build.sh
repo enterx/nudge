@@ -89,6 +89,102 @@ done
 echo "  Built: dist/claude-code/"
 
 # ----------------------------------------------------------------
+# Codex CLI
+# ----------------------------------------------------------------
+CX_DIST="${DIST}/codex-cli/plugins/nudge"
+mkdir -p "${CX_DIST}/scripts/lib" "${CX_DIST}/servers" "${CX_DIST}/skills"
+mkdir -p "${DIST}/codex-cli/.codex-plugin"
+
+# Plugin manifest (Codex format — version injected from constants.mjs)
+cat > "${DIST}/codex-cli/.codex-plugin/plugin.json" <<PJSON
+{
+  "name": "nudge",
+  "version": "${PLUGIN_VERSION}",
+  "description": "Mobile MCP tools for coding AI questions, approvals, and notifications with end-to-end encryption.",
+  "author": { "name": "EnterX LLC" },
+  "skills": "./plugins/nudge/skills/",
+  "mcpServers": "./plugins/nudge/.mcp.json",
+  "interface": {
+    "displayName": "Nudge",
+    "shortDescription": "Send coding AI questions and notifications to your phone",
+    "category": "Productivity"
+  }
+}
+PJSON
+
+# Copy adapter-specific files
+cp -R "${ADAPTERS}/codex-cli/"* "${CX_DIST}/"
+cp -R "${ADAPTERS}/codex-cli/".mcp.json "${CX_DIST}/" 2>/dev/null || true
+
+# Copy core lib/ (adapter files take precedence — skip if already present)
+for f in "${CORE}/lib/"*.mjs; do
+  base=$(basename "$f")
+  if [ ! -f "${CX_DIST}/scripts/lib/${base}" ]; then
+    cp "$f" "${CX_DIST}/scripts/lib/${base}"
+  fi
+done
+
+# Copy core bash lib
+cp "${CORE}/lib.sh" "${CX_DIST}/scripts/lib.sh"
+
+# Copy core shared scripts
+for f in "${CORE}/"*.sh; do
+  base=$(basename "$f")
+  [ "$base" = "lib.sh" ] && continue
+  cp "$f" "${CX_DIST}/scripts/${base}"
+done
+
+# Copy MCP server (rewrite import paths for dist layout: ./lib/ → ../scripts/lib/)
+sed 's|from '\''./lib/|from '\''../scripts/lib/|g' \
+  "${CORE}/nudge-mcp-server.mjs" > "${CX_DIST}/servers/nudge-mcp-server.mjs"
+
+# Copy tests (rewrite import paths for dist layout)
+cp -R "${CORE}/tests" "${CX_DIST}/tests"
+for f in "${CX_DIST}/tests/"*.mjs; do
+  [ -f "$f" ] || continue
+  sed -i '' \
+    -e "s|from '../lib/|from '../scripts/lib/|g" \
+    -e "s|import('../lib/|import('../scripts/lib/|g" \
+    -e "s|'..', 'nudge-mcp-server.mjs'|'..', 'servers', 'nudge-mcp-server.mjs'|g" \
+    "$f"
+done
+rm -f "${CX_DIST}/tests/hook.test.mjs" "${CX_DIST}/tests/nudge-scripts.test.sh"
+cat > "${CX_DIST}/tests/run-all.sh" <<'CXTESTS'
+#!/bin/bash
+# run-all.sh — Run Codex MCP-only Nudge plugin tests
+set -e
+
+cd "$(dirname "$0")/.."
+
+echo ""
+echo "=== Node.js unit tests ==="
+echo ""
+
+echo "--- config.test.mjs ---"
+node tests/config.test.mjs
+
+echo ""
+echo "--- token-utils.test.mjs ---"
+node tests/token-utils.test.mjs
+
+echo ""
+echo "--- sse.test.mjs ---"
+node tests/sse.test.mjs
+
+echo ""
+echo "=== MCP server tests ==="
+echo ""
+node tests/nudge-mcp-server.test.mjs
+
+echo ""
+echo "========================================"
+echo "  All tests passed."
+echo "========================================"
+CXTESTS
+
+echo "  Built: dist/codex-cli/"
+
+# ----------------------------------------------------------------
 # Post-processing
 # ----------------------------------------------------------------
 
@@ -111,6 +207,17 @@ for f in "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.m
   fi
 done
 
+CX_BASE="${DIST}/codex-cli/plugins/nudge"
+for f in "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.mjs" \
+         "scripts/lib/sse.mjs" "scripts/lib/token-utils.mjs" "scripts/lib/logger.mjs" \
+         "scripts/lib/crypto.mjs" "scripts/lib/encrypt-json.mjs" \
+         "servers/nudge-mcp-server.mjs"; do
+  if [ ! -f "${CX_BASE}/${f}" ]; then
+    echo "  MISSING (codex-cli): ${f}"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
 if [ $ERRORS -eq 0 ]; then
   echo "  All checks passed."
 else
@@ -120,4 +227,5 @@ fi
 
 echo ""
 echo "Build complete."
-echo "  /plugin marketplace add $(pwd)/dist/claude-code"
+echo "  Claude Code: /plugin marketplace add $(pwd)/dist/claude-code"
+echo "  Codex CLI:   Copy dist/codex-cli/ to ~/.agents/plugins/ or set NUDGE_CODEX_ROOT"

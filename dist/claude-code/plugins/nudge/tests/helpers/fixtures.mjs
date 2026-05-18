@@ -1,7 +1,7 @@
 /**
  * fixtures.mjs — Test data factories for Nudge plugin tests
  *
- * Provides helpers to create JWTs, config objects, hook payloads,
+ * Provides helpers to create JWTs, config objects, host tool payloads,
  * and SSE message strings. Zero external dependencies.
  */
 
@@ -50,14 +50,14 @@ export function createConfig(overrides = {}) {
 }
 
 /**
- * Create a hook input payload (as received by nudge-hook.mjs via stdin).
+ * Create a host tool input payload.
  *
  * @param {string} toolName
  * @param {object} [toolInput]
  * @param {object} [extras] - Additional fields (session_id, cwd, etc.)
  * @returns {object}
  */
-export function createHookPayload(toolName, toolInput = {}, extras = {}) {
+export function createHostToolPayload(toolName, toolInput = {}, extras = {}) {
   return {
     tool_name: toolName,
     tool_input: toolInput,

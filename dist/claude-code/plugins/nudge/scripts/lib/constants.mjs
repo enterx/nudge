@@ -21,7 +21,7 @@ export const CONFIG_PATH =
 export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
 // Per-session file keyed by parent PID (= host AI tool process PID).
-// Both hooks and MCP server are spawned by the same parent process,
+// Host integrations and MCP server can share the same parent process,
 // so process.ppid is the shared unique key. This avoids the port-reuse
 // problem where multiple sessions share CLAUDE_CODE_SSE_PORT.
 const ppid = process.ppid || '';
@@ -59,25 +59,27 @@ export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
 
 // --- Session ---
 
+const FALLBACK_SESSION_ID = `session-${randomUUID()}`;
+
 /**
  * Derive a deterministic session ID from the host tool's environment.
  *
- * Priority: hook-provided session_id (always unique per session) →
- * per-port file (written by SessionStart/PermissionRequest hook for MCP) →
- * cc-PORT fallback → random UUID.
+ * Priority: host-provided session_id (always unique per session) →
+ * per-parent session file → cc-PORT fallback → process-stable random UUID.
  *
- * Hooks always receive session_id from the host tool, so they use that directly.
- * MCP server has no hook input, so it reads from the per-port file.
+ * MCP server calls usually have no host input, so they read from the per-parent
+ * session file when available. MCP-only integrations use the process-stable
+ * fallback.
  *
- * @param {string} [hookSessionId] - session_id from hook input
+ * @param {string} [hostSessionId] - session_id from host input
  * @returns {string}
  */
-export function getSessionId(hookSessionId) {
-  // Hooks always have session_id — use it directly (no file read needed)
-  if (hookSessionId) {
-    return hookSessionId;
+export function getSessionId(hostSessionId) {
+  // Host integrations can provide session_id directly.
+  if (hostSessionId) {
+    return hostSessionId;
   }
-  // MCP server: read from per-port file (written by hooks)
+  // MCP server: read from per-parent file when an integration writes one.
   try {
     const fileId = readFileSync(SESSION_ID_PATH, 'utf8').trim();
     if (fileId) return fileId;
@@ -88,7 +90,7 @@ export function getSessionId(hookSessionId) {
   if (process.env.CLAUDE_CODE_SSE_PORT) {
     return `cc-${process.env.CLAUDE_CODE_SSE_PORT}`;
   }
-  return `session-${randomUUID()}`;
+  return FALLBACK_SESSION_ID;
 }
 
 // --- MCP protocol ---

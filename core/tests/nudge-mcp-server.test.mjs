@@ -107,7 +107,7 @@ await test('initialize returns correct protocol version and capabilities', async
 
 // --- Test: tools/list ---
 
-await test('tools/list returns all 3 nudge tools', async () => {
+await test('tools/list returns all 4 nudge tools', async () => {
   const proc = startServer();
   try {
     // Initialize first
@@ -139,14 +139,16 @@ await test('tools/list returns all 3 nudge tools', async () => {
     });
 
     assert.equal(resp.id, 2);
-    assert.equal(resp.result.tools.length, 3);
+    assert.equal(resp.result.tools.length, 4);
 
     const askTool = resp.result.tools.find((t) => t.name === 'nudge_ask_user');
     const approveTool = resp.result.tools.find((t) => t.name === 'nudge_approve');
     const notifyTool = resp.result.tools.find((t) => t.name === 'nudge_notify');
+    const statusTool = resp.result.tools.find((t) => t.name === 'nudge_status');
     assert.ok(askTool, 'nudge_ask_user tool should exist');
     assert.ok(approveTool, 'nudge_approve tool should exist');
     assert.ok(notifyTool, 'nudge_notify tool should exist');
+    assert.ok(statusTool, 'nudge_status tool should exist');
 
     const schema = askTool.inputSchema;
     assert.equal(schema.type, 'object');

@@ -24,17 +24,17 @@ RETRY_DELAY_BASE=1     # Exponential backoff: 1s, 2s, 4s
 
 # Derive a deterministic session ID from the host tool's environment.
 # Must match the logic in core/lib/constants.mjs:getSessionId().
-# Priority: hook session_id → per-PPID file → unknown
+# Priority: host session_id → per-PPID file → unknown
 # Uses PPID (parent PID = host AI tool process) as key to avoid
 # cross-session overwrites when multiple sessions share a port.
 get_session_id() {
-  local hook_session_id="${1:-}"
-  # Hooks always have session_id — use it directly
-  if [ -n "${hook_session_id}" ]; then
-    echo "${hook_session_id}"
+  local host_session_id="${1:-}"
+  # Host integrations can provide session_id directly.
+  if [ -n "${host_session_id}" ]; then
+    echo "${host_session_id}"
     return
   fi
-  # Read from PPID-keyed file (for scripts without hook input)
+  # Read from PPID-keyed file when an integration writes one.
   local ppid_key="${PPID:-}"
   local session_id_file
   if [ -n "${ppid_key}" ]; then
