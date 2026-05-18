@@ -148,7 +148,6 @@ file edits.
 | Hook event | Script | Mode | Purpose |
 |------------|--------|------|---------|
 | `SessionStart` | `nudge-session-start.sh` | sync | Injects ask-mode context |
-| `PreToolUse` | `nudge-activity.mjs` | async | Activity notifications for WebSearch/WebFetch |
 | `PermissionRequest` | `nudge-hook.mjs` | sync | Sends approval requests to phone |
 | `PostToolUse` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool completion |
 | `PostToolUseFailure` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool failure |

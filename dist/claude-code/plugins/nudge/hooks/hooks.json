@@ -11,19 +11,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "WebSearch|WebFetch",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-activity.mjs",
-            "async": true,
-            "timeout": 15
-          }
-        ]
-      }
-    ],
     "PermissionRequest": [
       {
         "matcher": ".*",

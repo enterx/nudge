@@ -46,8 +46,6 @@ The active mode is injected via SessionStart hook.
 
 **There are no automatic task-completion notification hooks.** Nudge relies
 entirely on Claude calling `nudge_notify` to inform the user of results.
-(Note: PreToolUse sends activity notifications for WebSearch/WebFetch
-automatically, but task outcomes are NOT auto-notified.)
 
 **You MUST call `nudge_notify` when:**
 - You finish a task or subtask
@@ -182,7 +180,6 @@ Code shows the terminal prompt and the PostToolUse hook resolves the mobile even
   Just under the Cloud Functions 540s execution limit.
 - **PermissionRequest hook**: 86400s (24 hours). The user may be AFK for hours.
   Also handles AskUserQuestion forwarding to mobile.
-- **PreToolUse hook** (Activity): 15s. Sends activity notifications for WebSearch/WebFetch.
 - **Async hooks** (PostToolUse, PostToolUseFailure, SessionEnd): 10s.
 - **SessionStart hook**: 5s (just reads config and outputs JSON).
 
