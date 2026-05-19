@@ -1,5 +1,5 @@
 {
-  "name": "nudge-cli",
+  "name": "@enterx/nudge",
   "version": "1.0.0",
   "description": "Approve coding AI actions from your phone — end-to-end encrypted CLI.",
   "type": "module",

@@ -65,7 +65,7 @@ Nudge sends permission requests and questions from your coding AI to your phone 
 
 ```bash
 # Install the CLI globally (recommended)
-npm install -g nudge-cli
+npm install -g @enterx/nudge
 ```
 
 Or clone & link from source:
@@ -200,7 +200,7 @@ Use this if your AI tool's framework supports MCP and you want the model to invo
   "mcpServers": {
     "nudge": {
       "command": "node",
-      "args": ["/path/to/nudge-cli/install/core/nudge-mcp-server.mjs"]
+      "args": ["/path/to/nudge/install/core/nudge-mcp-server.mjs"]
     }
   }
 }
