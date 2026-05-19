@@ -43,7 +43,6 @@ bash build.sh
 For rapid iteration on scripts that do not affect hooks registration or MCP server startup, you can test them directly:
 
 ```bash
-echo '{}' | bash core/nudge-session-start.sh
 echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node adapters/claude-code/scripts/nudge-hook.mjs
 ```
 
