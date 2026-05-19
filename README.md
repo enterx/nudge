@@ -52,7 +52,7 @@ Install from the published marketplace package. You do **not** need to run
 `build.sh`.
 
 ```
-/plugin marketplace add enterx/nudge-plugin
+/plugin marketplace add enterx/nudge
 /plugin install nudge
 ```
 
@@ -70,7 +70,7 @@ Install from the Codex marketplace manifest in this repository. You do **not**
 need to run `build.sh`.
 
 ```bash
-codex plugin marketplace add enterx/nudge-plugin
+codex plugin marketplace add enterx/nudge
 ```
 
 Then start Codex, run `/plugins`, find `nudge`, and enable it.
@@ -78,7 +78,7 @@ Then start Codex, run `/plugins`, find `nudge`, and enable it.
 For local development, register a checkout directly:
 
 ```bash
-codex plugin marketplace add /path/to/nudge-plugin
+codex plugin marketplace add /path/to/nudge
 ```
 
 ## Quick start
@@ -218,7 +218,7 @@ Toggle with `/afk-nudge` or `/desk-nudge`.
 ## Repository structure
 
 ```
-nudge-plugin/
+nudge/
 ├── core/                       # Shared code (source of truth)
 │   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
 │   ├── lib.sh                  # Shared bash utilities

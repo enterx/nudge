@@ -21,14 +21,14 @@ Thank you for your interest in contributing. This document covers the setup, con
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/enterx/nudge-plugin.git
-cd nudge-plugin
+git clone https://github.com/enterx/nudge.git
+cd nudge
 ```
 
 2. Load the plugin in Claude Code:
 
 ```
-/plugin marketplace add /path/to/nudge-plugin
+/plugin marketplace add /path/to/nudge
 /plugin install nudge
 ```
 
@@ -49,7 +49,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node adapters/claude
 ## Project structure
 
 ```
-nudge-plugin/
+nudge/
 ├── core/                       # Shared code (source of truth)
 │   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
 │   ├── lib.sh                  # Shared bash utilities
