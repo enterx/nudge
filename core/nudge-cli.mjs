@@ -92,6 +92,15 @@ function parseOption(spec) {
   return description ? { value, label, description } : { value, label };
 }
 
+function optionString(args, key) {
+  const value = args[key];
+  if (value == null) return undefined;
+  if (typeof value !== 'string' || !value.trim()) {
+    usageError(`--${key} requires a value`);
+  }
+  return value;
+}
+
 // --- Output helpers ----------------------------------------------------------
 
 function isJsonMode(args) {
@@ -159,7 +168,7 @@ Subcommands:
   pair                          Pair your phone (generate code, scan in app)
   status                        Show pairing + connection status
   mode <nudge|terminal>         Switch ask mode (alias for status --mode)
-  notify --title T --body B     Fire-and-forget notification
+  notify "Hello"                Fire-and-forget notification
   ask <question> -o val:label   Send a question, wait for an answer
   approve <description>         Send an approval request, exit 0/1
 
@@ -170,6 +179,7 @@ Common options:
 
 Examples:
   nudge pair
+  nudge notify "Hello"
   nudge notify --title "Build" --body "deploy.sh succeeded" --level success
   nudge approve "Deploy v1.2.3 to prod?" && ./deploy.sh
   nudge ask "Pick env" -o dev:Dev -o prod:Prod --json
@@ -188,18 +198,21 @@ const HELP_BY_CMD = {
     'Usage: nudge mode <nudge|terminal> [--json]\n' +
     '  Switch ask mode. `nudge` sends questions to your phone; `terminal` keeps them locally.',
   notify:
-    'Usage: nudge notify --title T --body B [--level info|success|warning|error]\n' +
-    '                    [--context C] [--session S] [--json]\n' +
-    '  Send a one-way push notification. Always returns immediately.',
+    'Usage: nudge notify <body>\n' +
+    '       nudge notify <title> <body>\n' +
+    '       nudge notify --title T --body B [--level info|success|warning|error]\n' +
+    '                    [--context C] [--json]\n' +
+    '  Send a one-way push notification. One positional arg is the body; title defaults to "Nudge".\n' +
+    '  With two or more positional args, the first is title and the rest become body.\n' +
+    '  --title and --body override positional values.',
   ask:
     'Usage: nudge ask <question> -o value:label [-o ...] [--multi]\n' +
-    '                  [--context C] [--session S] [--json]\n' +
+    '                  [--context C] [--json]\n' +
     '  Send a question, wait for the user to pick on their phone.\n' +
     '  Default output: one selected value per line, then a blank line, then free-text reply.\n' +
-    '  With --json: { selectedOptions, freeText }',
+    '  With --json: { selectedOptions, freeText }.',
   approve:
-    'Usage: nudge approve <description> [--tool NAME] [--cwd PATH]\n' +
-    '                      [--input JSON] [--context C] [--session S] [--json]\n' +
+    'Usage: nudge approve <description> [--context C] [--json]\n' +
     '  Send an approval request. Exit 0 if approved, 1 if denied.',
 };
 
@@ -247,10 +260,14 @@ async function cmdMode(args) {
 }
 
 async function cmdNotify(args) {
-  const title = args.title;
-  const body = args.body;
-  if (!title) usageError('notify requires --title');
-  if (!body) usageError('notify requires --body');
+  const positional = args._.slice(1);
+  const positionalTitle = positional.length >= 2 ? positional[0] : undefined;
+  const positionalBody = positional.length >= 2
+    ? positional.slice(1).join(' ').trim()
+    : positional.join(' ').trim();
+  const title = args.title || positionalTitle || 'Nudge';
+  const body = args.body || positionalBody;
+  if (!body) usageError('notify requires a body (pass a message or --body)');
 
   const payload = {
     title,
@@ -269,6 +286,7 @@ async function cmdAsk(args) {
   if (args.options.length < 2) {
     usageError('ask requires at least 2 options (use -o value:label)');
   }
+  const session = optionString(args, 'session');
   const options = args.options.map(parseOption);
 
   const payload = {
@@ -276,7 +294,7 @@ async function cmdAsk(args) {
     options,
     multiSelect: args.flags.has('multi'),
     ...(args.context && { context: args.context }),
-    ...(args.session && { sessionName: args.session }),
+    ...(session && { sessionName: session }),
   };
 
   const result = await runAskUser(payload, {
@@ -298,6 +316,8 @@ async function cmdAsk(args) {
 async function cmdApprove(args) {
   const description = args._.slice(1).join(' ').trim();
   if (!description) usageError('approve requires a description argument');
+  const title = optionString(args, 'title');
+  const tool = optionString(args, 'tool');
 
   let toolInput;
   if (args.input) {
@@ -310,7 +330,7 @@ async function cmdApprove(args) {
 
   const payload = {
     description,
-    ...(args.tool && { toolName: args.tool }),
+    ...((title || tool) && { toolName: title || tool }),
     ...(args.cwd && { cwd: args.cwd }),
     ...(args.context && { context: args.context }),
     ...(args.session && { sessionName: args.session }),

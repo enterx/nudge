@@ -19,6 +19,14 @@ echo "--- token-utils.test.mjs ---"
 node tests/token-utils.test.mjs
 
 echo ""
+echo "--- session-id.test.mjs ---"
+node tests/session-id.test.mjs
+
+echo ""
+echo "--- provider.test.mjs ---"
+node tests/provider.test.mjs
+
+echo ""
 echo "--- hook.test.mjs ---"
 node tests/hook.test.mjs
 

@@ -105,16 +105,34 @@ await test('ask without question exits 2', async () => {
   assert.match(stderr, /ask requires a question/);
 });
 
-await test('notify without title exits 2', async () => {
+await test('notify without body exits 2', async () => {
   const { code, stderr } = await runCli(['notify']);
   assert.equal(code, 2);
-  assert.match(stderr, /notify requires --title/);
+  assert.match(stderr, /notify requires a body/);
 });
 
-await test('notify without body exits 2', async () => {
+await test('notify with title flag but no body exits 2', async () => {
   const { code, stderr } = await runCli(['notify', '--title', 'x']);
   assert.equal(code, 2);
-  assert.match(stderr, /notify requires --body/);
+  assert.match(stderr, /notify requires a body/);
+});
+
+await test('notify accepts positional body', async () => {
+  const { code, stderr } = await runCli(['notify', 'Hello'], ENV_UNPAIRED);
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('notify accepts positional title and body', async () => {
+  const { code, stderr } = await runCli(['notify', 'Build', 'deploy succeeded'], ENV_UNPAIRED);
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('notify allows positional body with level flag', async () => {
+  const { code, stderr } = await runCli(['notify', 'Hello', '--level', 'success'], ENV_UNPAIRED);
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
 });
 
 await test('mode without target exits 2', async () => {

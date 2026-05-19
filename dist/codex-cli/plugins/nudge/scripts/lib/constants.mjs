@@ -5,10 +5,11 @@
  * Dependencies: None
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 
 // --- Directories & paths ---
 
@@ -55,21 +56,84 @@ export const TOKEN_REFRESH_BUFFER_SECONDS = 300;
 
 // --- Identity ---
 
-export const PROVIDER = process.env.NUDGE_PROVIDER || 'claude-code';
+const PROVIDER_COMMAND_MATCHERS = [
+  ['codex', /(?:^|[/\s])codex(?:$|[/\s-])/i],
+  ['claude-code', /(?:^|[/\s])claude(?:$|[/\s-])/i],
+];
+
+const SHELL_COMMAND_PATTERN = /(?:^|[/\s])(?:ba|z|fi)?sh(?:$|[/\s-])/i;
+
+function detectProviderFromEnv(env) {
+  const override = env.NUDGE_PROVIDER?.trim();
+  if (override) return override;
+
+  if (env.GITHUB_ACTIONS) return 'github-actions';
+  if (env.GITLAB_CI) return 'gitlab-ci';
+  if (env.CIRCLECI) return 'circleci';
+  if (env.BUILDKITE) return 'buildkite';
+  if (env.JENKINS_URL || env.JENKINS_HOME) return 'jenkins';
+  if (env.CI) return 'ci';
+
+  return undefined;
+}
+
+function getParentCommands(startPid = process.ppid, maxDepth = 6) {
+  const commands = [];
+  let pid = Number(startPid);
+  for (let depth = 0; Number.isFinite(pid) && pid > 1 && depth < maxDepth; depth += 1) {
+    try {
+      const output = execFileSync(
+        'ps',
+        ['-p', String(pid), '-o', 'ppid=', '-o', 'comm='],
+        { encoding: 'utf8', timeout: 1000 },
+      ).trim();
+      if (!output) break;
+      const match = output.match(/^(\d+)\s+(.+)$/);
+      if (!match) break;
+      pid = Number(match[1]);
+      commands.push(match[2]);
+    } catch {
+      break;
+    }
+  }
+  return commands;
+}
+
+function detectProviderFromParentCommands(commands) {
+  for (const command of commands) {
+    // If the CLI was launched from an interactive shell, treat it as a
+    // manual terminal run. Do not attribute it to the shell's parent app.
+    if (SHELL_COMMAND_PATTERN.test(command)) return undefined;
+    for (const [provider, pattern] of PROVIDER_COMMAND_MATCHERS) {
+      if (pattern.test(command)) return provider;
+    }
+  }
+  return undefined;
+}
+
+export function detectProvider({
+  env = process.env,
+  parentCommands = getParentCommands(),
+} = {}) {
+  return detectProviderFromEnv(env) || detectProviderFromParentCommands(parentCommands);
+}
+
+export const PROVIDER = detectProvider();
 
 // --- Session ---
 
-const FALLBACK_SESSION_ID = `session-${randomUUID()}`;
+const FALLBACK_SESSION_ID = randomUUID();
 
 /**
- * Derive a deterministic session ID from the host tool's environment.
+ * Derive a deterministic session ID from the host tool or terminal environment.
  *
- * Priority: host-provided session_id (always unique per session) →
- * per-parent session file → cc-PORT fallback → process-stable random UUID.
+ * Priority: host-provided session_id → NUDGE_SESSION_ID →
+ * per-parent session file → terminal session env →
+ * per-parent persisted CLI session → process-stable random UUID.
  *
  * MCP server calls usually have no host input, so they read from the per-parent
- * session file when available. MCP-only integrations use the process-stable
- * fallback.
+ * session file when available. Plain CLI calls persist a generated session ID
+ * by parent PID so commands from the same terminal shell group together.
  *
  * @param {string} [hostSessionId] - session_id from host input
  * @returns {string}
@@ -79,6 +143,9 @@ export function getSessionId(hostSessionId) {
   if (hostSessionId) {
     return hostSessionId;
   }
+  if (process.env.NUDGE_SESSION_ID) {
+    return process.env.NUDGE_SESSION_ID;
+  }
   // MCP server: read from per-parent file when an integration writes one.
   try {
     const fileId = readFileSync(SESSION_ID_PATH, 'utf8').trim();
@@ -86,9 +153,16 @@ export function getSessionId(hostSessionId) {
   } catch {
     // File doesn't exist yet or read error — fall through
   }
-  // Fallback: port-based (can be reused across sessions, but stable within one)
-  if (process.env.CLAUDE_CODE_SSE_PORT) {
-    return `cc-${process.env.CLAUDE_CODE_SSE_PORT}`;
+  // macOS Terminal/iTerm set a stable per-tab session ID.
+  if (process.env.TERM_SESSION_ID) {
+    return `term-${process.env.TERM_SESSION_ID}`;
+  }
+  try {
+    mkdirSync(NUDGE_CONFIG_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(SESSION_ID_PATH, FALLBACK_SESSION_ID, { mode: 0o600 });
+    return FALLBACK_SESSION_ID;
+  } catch {
+    // If persistence fails, keep the value stable within this process.
   }
   return FALLBACK_SESSION_ID;
 }
@@ -96,5 +170,5 @@ export function getSessionId(hostSessionId) {
 // --- MCP protocol ---
 
 export const SERVER_NAME = 'nudge-mcp';
-export const SERVER_VERSION = '1.0.0';
+export const SERVER_VERSION = '1.0.1';
 export const PROTOCOL_VERSION = '2024-11-05';

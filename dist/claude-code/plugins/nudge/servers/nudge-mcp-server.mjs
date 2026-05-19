@@ -48,7 +48,10 @@ function mcpResult(data) {
 async function handleNudgeAskUser(args, requestId) {
   const tracker = trackRequest(requestId);
   try {
-    const result = await runAskUser(args, {
+    const result = await runAskUser({
+      ...args,
+      sessionName: args.sessionName || args.title,
+    }, {
       onEventCreated: (ctx) => tracker.register(ctx),
     });
     return mcpResult(result);
@@ -60,7 +63,10 @@ async function handleNudgeAskUser(args, requestId) {
 async function handleNudgeApprove(args, requestId) {
   const tracker = trackRequest(requestId);
   try {
-    const result = await runApprove(args, {
+    const result = await runApprove({
+      ...args,
+      toolName: args.title || args.toolName,
+    }, {
       onEventCreated: (ctx) => tracker.register(ctx),
     });
     return mcpResult(result);
@@ -125,12 +131,6 @@ const TOOL_DEFINITION = {
           'Brief summary of what you are doing and why you need to ask this question. ' +
           'Shown on the mobile app to help the user understand the situation.',
       },
-      sessionName: {
-        type: 'string',
-        description:
-          'The current coding session or project name (e.g. from /rename). ' +
-          'Shown as the session title on the mobile app.',
-      },
     },
     required: ['question', 'options'],
   },
@@ -151,30 +151,11 @@ const APPROVE_TOOL_DEFINITION = {
         type: 'string',
         description: 'What action needs approval (shown to the user)',
       },
-      toolName: {
-        type: 'string',
-        description: 'Name of the tool/action requesting approval',
-      },
       context: {
         type: 'string',
         description:
           'Brief summary of what you are doing and why this action is needed. ' +
           'Shown on the mobile app to help the user make an informed decision.',
-      },
-      toolInput: {
-        type: 'object',
-        description:
-          'The original tool input (command, file_path, code, etc.) for rich display on mobile.',
-      },
-      cwd: {
-        type: 'string',
-        description: 'Current working directory where the action will run.',
-      },
-      sessionName: {
-        type: 'string',
-        description:
-          'The current coding session or project name (e.g. from /rename). ' +
-          'Shown as the session title on the mobile app.',
       },
     },
     required: ['description'],
@@ -218,12 +199,6 @@ const NOTIFY_TOOL_DEFINITION = {
           'Summary of the conversation so far — what was discussed, decided, ' +
           'and accomplished. Shown on the mobile app so the user can understand ' +
           'the full picture without returning to the terminal.',
-      },
-      sessionName: {
-        type: 'string',
-        description:
-          'The current coding session or project name. ' +
-          'Shown as the session title on the mobile app.',
       },
     },
     required: ['title', 'body'],

@@ -154,7 +154,7 @@ export async function runAskUser(args, hooks = {}) {
     apiUrl,
     'eventsCreate',
     {
-      provider: PROVIDER,
+      ...(PROVIDER && { provider: PROVIDER }),
       pluginVersion: SERVER_VERSION,
       toolName: 'nudge_ask_user',
       pattern: 'elicitation',
@@ -208,7 +208,7 @@ export async function runAskUser(args, hooks = {}) {
 export async function runApprove(args, hooks = {}) {
   const {
     description,
-    toolName = 'unknown',
+    toolName = 'nudge_approve',
     context,
     toolInput: argToolInput,
     cwd,
@@ -221,11 +221,16 @@ export async function runApprove(args, hooks = {}) {
   if (!description || typeof description !== 'string') {
     throw new Error('description is required and must be a string');
   }
+  if (!toolName || typeof toolName !== 'string') {
+    throw new Error('toolName is required and must be a string');
+  }
   validateStringLength(description, 'description');
+  validateStringLength(toolName, 'toolName');
   validateStringLength(context, 'context');
   validateStringLength(sessionName, 'sessionName');
 
   const { token, apiUrl } = await getAuthContext();
+  const approvalLabel = toolName === 'nudge_approve' ? 'Approval' : toolName;
 
   const sensitiveFields = {
     toolInput: argToolInput || { description },
@@ -239,7 +244,7 @@ export async function runApprove(args, hooks = {}) {
     apiUrl,
     'eventsCreate',
     {
-      provider: PROVIDER,
+      ...(PROVIDER && { provider: PROVIDER }),
       pluginVersion: SERVER_VERSION,
       toolName,
       pattern: 'approval',
@@ -252,7 +257,7 @@ export async function runApprove(args, hooks = {}) {
             encryptedNotif: encrypted.encryptedNotif,
             notifIv: encrypted.notifIv,
             toolInput: {},
-            description: `${toolName} requires approval`,
+            description: `${approvalLabel} requires approval`,
           }
         : sensitiveFields),
     },
@@ -329,6 +334,7 @@ export async function runNotify(args) {
     apiUrl,
     'pushNotifyFn',
     {
+      ...(PROVIDER && { provider: PROVIDER }),
       title,
       level,
       pluginVersion: SERVER_VERSION,
