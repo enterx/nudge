@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Monorepo structure**: `core/` shared code + `adapters/` per-tool configuration. `build.sh` assembles self-contained `dist/` package.
 - **PermissionRequest hook** (`nudge-hook.mjs`): Intercepts Bash, Write, Edit, NotebookEdit permission prompts and sends them to your phone for approval/denial via push notification. Supports "always allow" to persist permission rules.
 - **PostToolUse / PostToolUseFailure hooks** (`nudge-cancel-pending.mjs`): Resolves orphaned mobile events after tool completion or failure.
-- **SessionStart hook** (`nudge-session-start.sh`): Injects ask-mode context (nudge or terminal) into the coding session.
-- **SessionEnd hook** (`nudge-session-end.sh`): Cancels pending events and cleans up session files.
 - **PreToolUse hook** (`nudge-activity.mjs`): Sends lightweight activity notifications for WebSearch/WebFetch calls.
 - **MCP server** with three tools:
   - `nudge_ask_user`: Send questions with selectable options to the user's phone.

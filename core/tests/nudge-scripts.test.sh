@@ -2,7 +2,7 @@
 # nudge-scripts.test.sh — Tests for Nudge bash hook scripts
 #
 # Tests lib.sh unit functions and integration behavior of:
-#   nudge-session-start.sh, nudge-notify.sh, nudge-session-end.sh
+#   nudge-notify.sh
 #
 # Does NOT test nudge-hook.sh (requires live SSE server) or network paths.
 # Run: bash nudge-scripts.test.sh
@@ -273,47 +273,6 @@ exit_code=$(HOME="${TEST_HOME}" bash -c "
 expect_eq "exits with code 0" "0" "${exit_code}"
 
 # ============================================================
-# nudge-session-start.sh
-# ============================================================
-
-echo ""
-echo "nudge-session-start.sh"
-
-# Not configured — no output, exit 0
-remove_config
-output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
-exit_code=$?
-expect_exit "exits 0 when not configured" "0" "${exit_code}"
-expect_empty "no output when not configured" "${output}"
-
-# askMode: nudge
-write_config '{"token":"tok","askMode":"nudge"}'
-output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
-expect_contains "outputs NUDGE context" "NUDGE" "${output}"
-# hookEventName is adapter-specific — skip for adapters that omit it
-if echo "${output}" | grep -q "hookEventName"; then
-  expect_contains "includes hookEventName SessionStart" "SessionStart" "${output}"
-else
-  assert_pass "includes hookEventName SessionStart (adapter omits hookEventName)"
-fi
-expect_contains "includes hookSpecificOutput key" "hookSpecificOutput" "${output}"
-
-# askMode: terminal
-write_config '{"token":"tok","askMode":"terminal"}'
-output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
-expect_contains "outputs TERMINAL context" "TERMINAL" "${output}"
-
-# No askMode key → defaults to nudge
-write_config '{"token":"tok"}'
-output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
-expect_contains "defaults to NUDGE when askMode absent" "NUDGE" "${output}"
-
-# Unknown askMode value → fallback to NUDGE
-write_config '{"token":"tok","askMode":"unknown_value"}'
-output=$(printf '{}' | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-start.sh" 2>/dev/null)
-expect_contains "falls back to NUDGE for unknown askMode" "NUDGE" "${output}"
-
-# ============================================================
 # nudge-notify.sh
 # ============================================================
 
@@ -353,46 +312,6 @@ HOME="${TEST_HOME}" printf '%s' "${PERM_INPUT}" | bash "${SCRIPTS_DIR}/nudge-not
 exit_code=$?
 expect_exit "exits 0 for permission_prompt with recent approval" "0" "${exit_code}"
 rm -f "${TEST_CONFIG_DIR}/last_approval"
-
-# ============================================================
-# nudge-session-end.sh
-# ============================================================
-
-echo ""
-echo "nudge-session-end.sh"
-
-# Not configured → exits 0
-remove_config
-printf '{"session_id":"s1","reason":"clear"}' \
-  | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-end.sh" >/dev/null 2>&1
-exit_code=$?
-expect_exit "exits 0 when not configured" "0" "${exit_code}"
-
-# Config present but no token → exits 0
-write_config '{"apiUrl":"http://127.0.0.1:19999"}'
-printf '{"session_id":"s1","reason":"logout"}' \
-  | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-end.sh" >/dev/null 2>&1
-exit_code=$?
-expect_exit "exits 0 when no token in config" "0" "${exit_code}"
-
-# With token (expired/fake): removes last_stop file even if API call fails.
-# Uses unreachable URL so api_post fails fast (connection refused).
-# Note: api_post retries up to 3 times — this test takes ~3 seconds.
-write_config '{"token":"fake.ZHVtbXk.sig","apiUrl":"http://127.0.0.1:19999"}'
-touch "${TEST_CONFIG_DIR}/last_stop"
-printf '{"session_id":"s1","reason":"clear"}' \
-  | HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-end.sh" >/dev/null 2>&1 || true
-if [ ! -f "${TEST_CONFIG_DIR}/last_stop" ]; then
-  assert_pass "removes last_stop file on session end"
-else
-  assert_fail "removes last_stop file on session end" "last_stop still exists"
-fi
-
-# reason=clear produces non-empty body (smoke check via debug output)
-write_config '{"token":"fake.ZHVtbXk.sig","apiUrl":"http://127.0.0.1:19999"}'
-debug_output=$(printf '{"session_id":"s1","reason":"clear"}' \
-  | NUDGE_DEBUG=1 HOME="${TEST_HOME}" bash "${SCRIPTS_DIR}/nudge-session-end.sh" 2>&1 || true)
-expect_contains "logs SessionEnd debug message" "SessionEnd" "${debug_output}"
 
 # ============================================================
 # Summary

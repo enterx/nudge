@@ -177,6 +177,11 @@ echo ""
 node tests/nudge-mcp-server.test.mjs
 
 echo ""
+echo "=== CLI tests ==="
+echo ""
+node tests/nudge-cli.test.mjs
+
+echo ""
 echo "========================================"
 echo "  All tests passed."
 echo "========================================"
@@ -218,6 +223,11 @@ for f in "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.m
   fi
 done
 
+if ! grep -q '"./plugins/nudge/servers/nudge-mcp-server.mjs"' "${CX_BASE}/.mcp.json"; then
+  echo "  INVALID (codex-cli): .mcp.json must resolve from the Codex plugin package root"
+  ERRORS=$((ERRORS + 1))
+fi
+
 if [ $ERRORS -eq 0 ]; then
   echo "  All checks passed."
 else
@@ -228,4 +238,4 @@ fi
 echo ""
 echo "Build complete."
 echo "  Claude Code: /plugin marketplace add $(pwd)/dist/claude-code"
-echo "  Codex CLI:   Copy dist/codex-cli/ to ~/.agents/plugins/ or set NUDGE_CODEX_ROOT"
+echo "  Codex CLI:   codex plugin marketplace add $(pwd)"

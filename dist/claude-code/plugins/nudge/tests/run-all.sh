@@ -32,6 +32,11 @@ echo ""
 node tests/nudge-mcp-server.test.mjs
 
 echo ""
+echo "=== CLI tests ==="
+echo ""
+node tests/nudge-cli.test.mjs
+
+echo ""
 echo "=== Shell tests ==="
 echo ""
 bash tests/nudge-scripts.test.sh

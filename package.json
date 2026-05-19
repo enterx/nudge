@@ -1,0 +1,41 @@
+{
+  "name": "nudge-cli",
+  "version": "1.0.0",
+  "description": "Approve coding AI actions from your phone — end-to-end encrypted CLI.",
+  "type": "module",
+  "bin": {
+    "nudge": "./core/nudge-cli.mjs"
+  },
+  "files": [
+    "core/lib/",
+    "core/lib.sh",
+    "core/nudge-cli.mjs",
+    "core/nudge-mcp-server.mjs",
+    "core/nudge-pair.sh",
+    "core/nudge-notify.sh",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": "EnterX LLC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enterx/nudge-plugin"
+  },
+  "homepage": "https://github.com/enterx/nudge-plugin#readme",
+  "keywords": [
+    "cli",
+    "push-notifications",
+    "approvals",
+    "ai-coding",
+    "mcp",
+    "e2e-encryption"
+  ],
+  "scripts": {
+    "test": "bash core/tests/run-all.sh"
+  }
+}
