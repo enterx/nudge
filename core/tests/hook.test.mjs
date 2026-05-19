@@ -110,6 +110,9 @@ describe('shouldSkip', () => {
       shouldSkip('Bash', { command: 'bash /path/to/nudge-hook.sh' }),
       true,
     );
+    // Note: regex \bnudge-\w+\.(sh|mjs)\b requires the segment after nudge-
+    // to be a single \w+ run (no extra hyphens). Multi-segment names like
+    // nudge-session-start.sh don't match, but path-based commands do.
     assert.equal(
       shouldSkip('Bash', { command: 'bash nudge-notify.sh' }),
       true,

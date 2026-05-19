@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PermissionRequest": [
       {
         "matcher": ".*",
@@ -32,6 +43,18 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-cancel-pending.mjs",
+            "async": true,
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/nudge-session-end.sh",
             "async": true,
             "timeout": 10
           }

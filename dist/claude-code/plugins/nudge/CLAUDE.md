@@ -32,8 +32,7 @@ The user toggles mode via `/afk-nudge` or `/desk-nudge`:
 - **`terminal` mode**: Questions and approvals stay in terminal. User is present.
   Use standard `AskUserQuestion` — it shows in the terminal normally.
 
-The active mode can be checked or changed with the Nudge mode skills or
-`nudge_status`.
+The active mode is injected via SessionStart hook.
 
 ### MCP Tool Usage
 
@@ -181,7 +180,8 @@ Code shows the terminal prompt and the PostToolUse hook resolves the mobile even
   Just under the Cloud Functions 540s execution limit.
 - **PermissionRequest hook**: 86400s (24 hours). The user may be AFK for hours.
   Also handles AskUserQuestion forwarding to mobile.
-- **Async hooks** (PostToolUse, PostToolUseFailure): 10s.
+- **Async hooks** (PostToolUse, PostToolUseFailure, SessionEnd): 10s.
+- **SessionStart hook**: 5s (just reads config and outputs JSON).
 
 #### Reconnection protocol
 

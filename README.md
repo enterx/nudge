@@ -219,9 +219,11 @@ Install from the published marketplace package:
 
 | Hook event | Script | Mode | Purpose |
 |------------|--------|------|---------|
+| `SessionStart` | `nudge-session-start.sh` | sync | Injects ask-mode context |
 | `PermissionRequest` | `nudge-hook.mjs` | sync | Sends approval requests to phone |
 | `PostToolUse` | `nudge-cancel-pending.mjs` | async | Resolves orphaned events after tool completion |
 | `PostToolUseFailure` | `nudge-cancel-pending.mjs` | async | Resolves orphaned events after tool failure |
+| `SessionEnd` | `nudge-session-end.sh` | async | Cancels pending events, cleans up session |
 
 **Known limitations:**
 - `PermissionRequest` also intercepts `AskUserQuestion`, but Claude Code can send SIGKILL on cancellation (e.g., Escape) — the hook has no chance to dismiss the mobile card. Prefer `nudge_ask_user` (MCP) or `nudge ask` (CLI) when reliability matters.
