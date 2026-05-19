@@ -1,6 +1,6 @@
 {
   "name": "nudge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Mobile MCP tools for coding AI questions, approvals, and notifications with end-to-end encryption.",
   "author": { "name": "EnterX LLC" },
   "skills": "./plugins/nudge/skills/",

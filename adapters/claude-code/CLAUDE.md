@@ -25,7 +25,7 @@ Nudge uses **hooks** and **MCP tools** to bridge Claude Code and the user's mobi
 
 ### Ask Mode — Terminal vs Mobile
 
-The user toggles mode via `/afk-nudge` or `/desk-nudge`:
+The user toggles mode via `/nudge-afk` or `/nudge-desk`:
 
 - **`nudge` mode** (default): Questions and approvals go to mobile. User is AFK.
   **Use `nudge_ask_user` MCP tool** for questions (not `AskUserQuestion`).

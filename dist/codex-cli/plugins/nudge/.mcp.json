@@ -1,7 +1,8 @@
 {
   "nudge-mcp": {
     "command": "node",
-    "args": ["./servers/nudge-mcp-server.mjs"],
+    "args": ["./plugins/nudge/servers/nudge-mcp-server.mjs"],
+    "cwd": ".",
     "env": { "NUDGE_PROVIDER": "codex" }
   }
 }

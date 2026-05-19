@@ -16,6 +16,14 @@ echo "--- token-utils.test.mjs ---"
 node tests/token-utils.test.mjs
 
 echo ""
+echo "--- session-id.test.mjs ---"
+node tests/session-id.test.mjs
+
+echo ""
+echo "--- provider.test.mjs ---"
+node tests/provider.test.mjs
+
+echo ""
 echo "--- sse.test.mjs ---"
 node tests/sse.test.mjs
 
@@ -23,6 +31,11 @@ echo ""
 echo "=== MCP server tests ==="
 echo ""
 node tests/nudge-mcp-server.test.mjs
+
+echo ""
+echo "=== CLI tests ==="
+echo ""
+node tests/nudge-cli.test.mjs
 
 echo ""
 echo "========================================"

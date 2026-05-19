@@ -99,7 +99,7 @@ await test('initialize returns correct protocol version and capabilities', async
     assert.equal(resp.result.protocolVersion, '2024-11-05');
     assert.deepEqual(resp.result.capabilities, { tools: {} });
     assert.equal(resp.result.serverInfo.name, 'nudge-mcp');
-    assert.equal(resp.result.serverInfo.version, '1.0.0');
+    assert.equal(resp.result.serverInfo.version, '1.0.1');
   } finally {
     proc.kill();
   }
@@ -162,10 +162,7 @@ await test('tools/list returns all 4 nudge tools', async () => {
 
     const approveSchema = approveTool.inputSchema;
     assert.ok(approveSchema.properties.description);
-    assert.ok(approveSchema.properties.toolName);
     assert.ok(approveSchema.properties.context, 'nudge_approve should have context property');
-    assert.ok(approveSchema.properties.toolInput, 'nudge_approve should have toolInput property');
-    assert.ok(approveSchema.properties.cwd, 'nudge_approve should have cwd property');
     assert.deepEqual(approveSchema.required, ['description']);
 
     // Verify nudge_notify schema

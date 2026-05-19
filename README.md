@@ -7,19 +7,19 @@ Approve coding AI actions from your phone -- with end-to-end encryption.
 ![Encryption: AES-256-GCM](https://img.shields.io/badge/Encryption-AES--256--GCM-brightgreen.svg)
 ![E2E: Zero Knowledge](https://img.shields.io/badge/E2E-Zero%20Knowledge-brightgreen.svg)
 
-Nudge sends permission requests and questions from your coding AI to your phone as push notifications. You approve or deny with a tap, and the tool continues -- no terminal required.
+Nudge sends permission requests, questions, and status notifications from your terminal to your phone. You approve, deny, or answer from mobile, and the command continues.
 
 **Your commands, code, and file paths are encrypted before leaving your machine.** The Nudge server only sees ciphertext -- it cannot read what you're approving. Push notifications are decrypted on-device via iOS Notification Service Extension / Android background handler. [See how it works.](#end-to-end-encryption)
 
 ## How it works
 
 ```
-┌──────────────┐     hooks      ┌─────────────┐   encrypted   ┌──────────────┐
-│  Coding AI   │  ──────────>   │ Nudge Plugin│  ──────────>  │              │
-│              │                │   AES-256   │   HTTPS/TLS   │ Nudge Server │
-│              │  <──────────   │   encrypt   │  <──────────  │ (ciphertext  │
-└──────────────┘  allow/deny    └─────────────┘   SSE stream  │  only)       │
-                                                              └──────┬───────┘
+┌──────────────┐                ┌─────────────┐   encrypted   ┌──────────────┐
+│  Terminal /  │  nudge ask /   │ Nudge CLI   │  ──────────>  │              │
+│  script / AI │  approve /     │ AES-256     │   HTTPS/TLS   │ Nudge Server │
+│  agent       │  notify        │ encrypt     │  <──────────  │ (ciphertext  │
+└──────────────┘  <──────────   └─────────────┘   SSE stream  │  only)       │
+                 answer / deny                               └──────┬───────┘
                                                                      │
                                                                      │ FCM push
                                                                      │ (encrypted)
@@ -31,163 +31,136 @@ Nudge sends permission requests and questions from your coding AI to your phone 
                                                               └──────────────┘
 ```
 
-1. Your AI tool triggers a permission-requiring action (Bash, Write, Edit, etc.)
-2. The plugin **encrypts** the event (AES-256-GCM) and sends ciphertext to the Nudge server
+1. Your terminal, script, CI job, or coding agent runs `nudge ask`, `nudge approve`, or `nudge notify`
+2. The Nudge CLI **encrypts** the event (AES-256-GCM) and sends ciphertext to the Nudge server
 3. The server forwards the encrypted push notification to your phone via FCM -- **it never sees plaintext**
-4. Your phone **decrypts on-device** and shows the full command details
+4. Your phone **decrypts on-device** and shows the full details
 5. You tap Approve or Deny
-6. The response flows back through the SSE stream, and the AI tool continues
+6. The response flows back through the SSE stream, and the CLI exits with the right result
 
 ## Prerequisites
 
 - **Node.js 18+** (uses built-in `fetch`)
 - **Nudge mobile app** installed on your phone
-- **Coding AI with plugin support** (e.g., Claude Code, Codex CLI)
 
-## Installation
-
-### Claude Code
-
-Install from the published marketplace package. You do **not** need to run
-`build.sh`.
-
-```
-/plugin marketplace add enterx/nudge
-/plugin install nudge
-```
-
-### Codex CLI
-
-Codex CLI's hooks framework is still maturing — plugin-bundled hooks are
-opt-in (`[features].plugin_hooks = true`), `apply_patch` and MCP tool calls
-aren't reliably intercepted, and `PreToolUse` only honors `deny` decisions
-today. Until those gaps close, the Codex adapter ships as **MCP tools +
-skills only**: tool-call approvals continue to use Codex's built-in terminal
-flow, while questions, status updates, and "what next?" prompts are routed to
-your phone via the `nudge_ask_user` / `nudge_notify` MCP tools.
-
-Install from the Codex marketplace manifest in this repository. You do **not**
-need to run `build.sh`.
+## Install
 
 ```bash
-codex plugin marketplace add enterx/nudge
+npm install -g @enterx/nudge
 ```
 
-Then start Codex, run `/plugins`, find `nudge`, and enable it.
-
-For local development, register a checkout directly:
+Or clone & link from source:
 
 ```bash
-codex plugin marketplace add /path/to/nudge
+git clone https://github.com/enterx/nudge.git
+cd nudge
+npm install -g .
 ```
+
+This puts `nudge` on your `PATH`.
 
 ## Quick start
 
+```bash
+nudge pair                              # Generate code, enter it in the Nudge app
+nudge notify "Hello"                    # Send a test notification
+nudge ask "Pick env" -o dev:Dev -o prod:Prod
+nudge approve "Deploy v1.2.3 to prod?" && ./deploy.sh
+nudge status                            # Check connection / config
+nudge mode terminal                     # Toggle ask mode (or `nudge`)
 ```
-1. /pair-nudge   → Generates a code. Enter it in the Nudge app.
-2. Start coding   → Permission prompts appear on your phone.
-3. /test-nudge   → Send a test notification to verify delivery.
+
+## CLI reference
+
+### `nudge pair`
+
+Pair your phone with this machine. Generates a pairing code; enter it in the Nudge app on your phone. Replaces any existing config.
+
+### `nudge status [--mode nudge|terminal] [--json]`
+
+Prints pairing state, server connectivity, auth token validity, current ask mode, and CLI/backend versions. Exits **3** if not paired.
+
+### `nudge mode <nudge|terminal> [--json]`
+
+Switch ask mode. `nudge` sends questions to your phone (AFK); `terminal` keeps them in the terminal (desk). Alias for `nudge status --mode <target>`.
+
+### `nudge notify <body> [options]`
+
+Send a one-way push notification (fire-and-forget). Returns immediately.
+With one positional argument, the title defaults to `Nudge`. With two or more
+positional arguments, the first is the title and the rest become the body.
+`--title` and `--body` remain supported and override positional values.
+
+| Option | Description |
+|--------|-------------|
+| `--title T` | Notification title |
+| `--body B` | Notification body |
+| `--level L` | `info` (default), `success`, `warning`, `error` |
+| `--context C` | Free-form context shown on mobile |
+| `--json` | Emit `{ "sent": true }` to stdout |
+
+### `nudge ask <question> -o value:label [-o ...] [options]`
+
+Send a question and wait for the user to pick on their phone. Default output is the selected `value`s, one per line, optionally followed by a blank line and a free-text reply. With `--json`, prints `{ selectedOptions, freeText }`.
+
+| Option | Description |
+|--------|-------------|
+| `-o value:label[:description]` *(required, 2-4 times)* | A choice |
+| `--multi` | Allow multiple selections |
+| `--context C` | Free-form context shown on mobile |
+| `--json` | Emit JSON to stdout |
+
+### `nudge approve <description> [options]`
+
+Send an approval request. **Exits 0 on approve, 1 on deny** — designed for shell chains like `nudge approve "..." && ./deploy.sh`.
+
+| Option | Description |
+|--------|-------------|
+| `--context C` | Free-form context shown on mobile |
+| `--json` | Emit `{ approved, reason }` to stdout |
+
+### Global options
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Print JSON to stdout instead of human-readable output |
+| `-h`, `--help` | Show help (per-subcommand if positioned after the subcommand) |
+| `-V`, `--version` | Print version |
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success / approved |
+| `1` | Denied (only for `approve`) |
+| `2` | Usage / argument error |
+| `3` | Not paired (run `nudge pair`) |
+| `4` | Network / server error |
+| `5` | Validation error |
+| `130` | Cancelled by SIGINT (best-effort cancels the pending mobile event) |
+
+## Recipes
+
+```bash
+# Notify when a long-running build finishes
+make deploy && nudge notify "Deploy" "v1.2.3 live" --level success
+
+# Approve a destructive op interactively
+nudge approve "DROP TABLE users_old?" && psql -c "DROP TABLE users_old"
+
+# Ask which environment to deploy to from a CI job
+ENV=$(nudge ask "Where should we ship?" -o staging:Staging -o prod:Prod --json | jq -r '.selectedOptions[0]')
+./deploy.sh "$ENV"
+
+# Use Nudge from a coding AI — just shell out
+# (the AI calls Bash("nudge approve '...'") and reads the exit code)
 ```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/pair-nudge` | Pair your phone. Generates a pairing code. |
-| `/test-nudge` | Send a test notification to verify push delivery. |
-| `/status-nudge` | Check connection status, token validity, and server health. |
-| `/afk-nudge` | Switch to mobile mode — questions go to your phone. |
-| `/desk-nudge` | Switch to terminal mode — questions stay in the terminal. |
-
-## MCP tools
-
-The plugin exposes four tools via its MCP server. The AI tool calls these directly. Usage guidelines (when to call each tool, required behavior like always sending `nudge_notify` on task completion) are defined in the plugin's agent instructions file (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex CLI), which is automatically loaded into the AI's context.
-
-### `nudge_ask_user`
-
-Send a question to the user's phone. The user picks from options or types free text.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `question` | string | Yes | The question to ask |
-| `options` | array | Yes | 2-4 choices, each with `value` and `label` |
-| `multiSelect` | boolean | No | Allow multiple selections. Default: `false` |
-| `context` | string | No | Summary of what you are doing and why |
-| `sessionName` | string | No | Session title shown on mobile |
-
-### `nudge_approve`
-
-Send an approval request (Approve / Deny).
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `description` | string | Yes | What needs approval |
-| `toolName` | string | No | Name of the action |
-| `context` | string | No | Summary for the user |
-| `toolInput` | object | No | Original tool input for rich display |
-| `cwd` | string | No | Working directory |
-| `sessionName` | string | No | Session title shown on mobile |
-
-### `nudge_notify`
-
-Send a one-way notification (fire-and-forget). Does not wait for a response.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `title` | string | Yes | Notification title |
-| `body` | string | Yes | Notification body with details |
-| `level` | string | No | `info` (default), `success`, `warning`, `error` |
-| `context` | string | No | Conversation summary |
-| `sessionName` | string | No | Session title shown on mobile |
-
-### `nudge_status`
-
-Check connection/config status. Also handles mode switching via the `mode` parameter. Used by `/status-nudge`, `/afk-nudge`, and `/desk-nudge` skills.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `mode` | string | No | Switch ask mode: `nudge` (AFK) or `terminal` (desk). Omit to just check status. |
-
-Pairing (`/pair-nudge`) is handled by a shell script (`nudge-pair.sh`) instead of an MCP tool, so QR codes can be displayed in the terminal.
-
-## Hooks
-
-Hooks listed below are **Claude Code only**. Codex CLI exposes a hooks
-framework as well, but its current limitations (plugin hooks gated behind
-`[features].plugin_hooks`, unreliable interception of `apply_patch` / MCP
-tools, `deny`-only `PreToolUse` decisions) make it unsuitable for the Nudge
-approval flow today. The Codex adapter therefore registers no hooks and
-relies on MCP tools + Codex's built-in approval flow for shell commands and
-file edits.
-
-| Hook event | Script | Mode | Purpose |
-|------------|--------|------|---------|
-| `PermissionRequest` | `nudge-hook.mjs` | sync | Sends approval requests to phone |
-| `PostToolUse` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool completion |
-| `PostToolUseFailure` | `nudge-cancel-pending.mjs` | async | Resolves orphaned mobile events after tool failure |
-
-### AskUserQuestion routing — MCP recommended
-
-The PermissionRequest hook also intercepts `AskUserQuestion` and forwards it to
-mobile. However, this hook-based approach has **known event consistency issues**:
-Some AI tools send SIGKILL to hook processes on cancellation (e.g., user presses
-Escape), which cannot be caught — the hook has no opportunity to dismiss the
-mobile card, leaving it in a pending state.
-
-**The `nudge_ask_user` MCP tool is recommended** for questions in nudge mode.
-MCP tools run within the MCP server process and are not subject to hook process
-lifecycle, so event cleanup is reliable. The hook-based `AskUserQuestion`
-forwarding remains available as an experimental fallback.
-
-### Graceful degradation
-
-Every hook exits with code 0 on failure. The AI tool falls back to its built-in terminal prompt if Nudge is unreachable, unconfigured, or errors out. You never get stuck.
 
 ## Configuration
 
 ### Config file
 
-Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair-nudge`.
+Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `nudge pair`.
 
 ```json
 {
@@ -197,7 +170,8 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair
   "userId": "<firebase-uid>",
   "apiUrl": "https://api.appnudge.dev",
   "pairingCode": "ABC-DEF",
-  "encryptionKey": "<base64-encoded-aes-256-key>"
+  "encryptionKey": "<base64-encoded-aes-256-key>",
+  "askMode": "nudge"
 }
 ```
 
@@ -206,69 +180,43 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `/pair
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NUDGE_API_URL` | (from config) | Override the API URL |
+| `NUDGE_CONFIG_PATH` | `~/.nudge/config` | Override the config file location |
 | `NUDGE_DEBUG` | unset | Set to `1` for debug logging |
 
 ### Ask modes
 
-- **`nudge`** (default): Questions go to your phone via `nudge_ask_user`.
+- **`nudge`** (default): Questions go to your phone.
 - **`terminal`**: Questions stay in the terminal.
 
-Toggle with `/afk-nudge` or `/desk-nudge`.
+Toggle with `nudge mode nudge` / `nudge mode terminal`.
 
 ## Repository structure
 
 ```
 nudge/
-├── core/                       # Shared code (source of truth)
-│   ├── lib/                    # Node.js modules (api, config, sse, crypto, etc.)
+├── core/                       # CLI source of truth
+│   ├── lib/                    # Node.js modules (api, config, sse, crypto, handlers, …)
 │   ├── lib.sh                  # Shared bash utilities
-│   ├── nudge-mcp-server.mjs    # MCP server (4 tools)
-│   ├── nudge-pair.sh             # Device pairing script
-│   ├── nudge-notify.sh          # Idle-prompt notification script
+│   ├── nudge-cli.mjs           # CLI entry (recommended surface)
+│   ├── nudge-pair.sh           # Device pairing script
 │   └── tests/                  # Test suite
-├── adapters/
-│   ├── claude-code/            # Claude Code adapter (hooks + MCP + skills)
-│   │   ├── hooks/hooks.json    # Hook registration
-│   │   ├── .mcp.json           # MCP server registration
-│   │   ├── CLAUDE.md           # Context instructions
-│   │   ├── skills/             # Skill definitions
-│   │   └── scripts/            # Hook scripts (hook, activity, session)
-│   └── codex-cli/              # Codex CLI adapter (MCP + skills only — no hooks)
-│       ├── plugin.json         # Codex plugin manifest
-│       ├── .mcp.json           # MCP server registration (NUDGE_PROVIDER=codex)
-│       ├── AGENTS.md           # Context instructions
-│       └── skills/             # Skill definitions
-├── build.sh                    # Assembles dist/ from core + adapters
-└── dist/
-    ├── claude-code/            # Build output for Claude Code
-    └── codex-cli/              # Build output for Codex CLI
+├── package.json                # npm package
+└── README.md
 ```
 
-## Building
-
-```bash
-bash build.sh
-```
-
-This is only needed when changing source files under `core/` or `adapters/`.
-It assembles self-contained packages in `dist/` by combining `core/` with each
-adapter (Claude Code and Codex CLI). Normal installation uses the checked-in
-`dist/` packages above and does not require a local build.
+The repository also keeps legacy adapter code for Claude Code and Codex experiments, but the supported user-facing surface is the `nudge` CLI.
 
 ## Running tests
 
 ```bash
-# Build first (tests run against dist)
-bash build.sh
-
-cd dist/claude-code/plugins/nudge && bash tests/run-all.sh
+bash core/tests/run-all.sh
 ```
 
-The test suite covers Node.js unit tests, MCP server tests, and shell script tests -- no live server required.
+The suite covers config/token utilities, SSE parsing, CLI argv handling, and shell helper behavior. No live server is required.
 
 ## Self-hosting
 
-The Nudge backend (Cloud Functions + Firebase) is not included in this repository. The plugin communicates with the server via HTTPS REST endpoints:
+The Nudge backend (Cloud Functions + Firebase) is not included in this repository. The CLI communicates with the server via HTTPS REST endpoints:
 
 - `POST /eventsCreate` -- Create an event (approval, elicitation, notification)
 - `POST /eventsRespond/:eventId/respond` -- Respond to an event
@@ -276,7 +224,6 @@ The Nudge backend (Cloud Functions + Firebase) is not included in this repositor
 - `POST /pairGenerate` -- Generate a pairing code
 - `POST /pairVerify` -- Verify pairing status
 - `POST /pairKeyExchange` -- Store wrapped E2E encryption key
-- `POST /sessionEnd` -- Clean up session events
 - `GET /status` -- Health check
 
 SSE streaming uses Firebase Realtime Database REST API for real-time response delivery.
@@ -303,7 +250,7 @@ Nudge is **zero-knowledge by design**. All sensitive data is encrypted with **AE
 ### How it works
 
 ```
-1. /pair generates a random AES-256 key
+1. nudge pair generates a random AES-256 key
 2. Key is wrapped with PBKDF2(pairing_code, 600k iterations)
 3. Wrapped key is uploaded — server can't unwrap it (code expires in 10 min)
 4. Mobile app unwraps the key using the same pairing code
@@ -320,7 +267,7 @@ The encryption implementation is fully open-source:
 
 - **Key generation & encryption**: [`core/lib/crypto.mjs`](core/lib/crypto.mjs)
 - **Key exchange during pairing**: [`core/lib/setup-encryption.mjs`](core/lib/setup-encryption.mjs)
-- **Event encryption before sending**: [`core/nudge-mcp-server.mjs`](core/nudge-mcp-server.mjs) and [`adapters/claude-code/scripts/nudge-hook.mjs`](adapters/claude-code/scripts/nudge-hook.mjs) (`encryptSensitiveFields`)
+- **Event encryption before sending**: [`core/lib/handlers.mjs`](core/lib/handlers.mjs)
 
 ## Privacy & data handling
 
