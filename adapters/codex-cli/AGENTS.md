@@ -29,7 +29,7 @@ flow remains responsible for shell commands and file edits.
 
 ### Ask Mode — Terminal vs Mobile
 
-The user toggles mode via `/afk-nudge` or `/desk-nudge`:
+The user toggles mode via `/nudge-afk` or `/nudge-desk`:
 
 - **`nudge` mode** (default): Questions go to mobile. User may be AFK.
   **Use `nudge_ask_user` MCP tool** for questions.
