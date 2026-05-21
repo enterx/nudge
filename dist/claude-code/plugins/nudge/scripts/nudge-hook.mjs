@@ -9,10 +9,8 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 
 
 import { PROVIDER, SERVER_VERSION, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
@@ -21,32 +19,13 @@ import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
-import { encryptFields } from './lib/crypto.mjs';
-
-// --- Pending event tracking ---
-// Stores the current eventId so PostToolUse can cancel it if the user
-// responded via terminal (bypassing the mobile approval).
-
-function pendingFilePath(sessionId, eventId) {
-  return join(homedir(), '.nudge', `pending-${sessionId}-${eventId}.json`);
-}
-
-function writePending(sessionId, eventId, apiUrl, token, pattern, toolUseId, toolName, toolInput) {
-  const toolInputHash = toolInput
-    ? createHash('sha256').update(JSON.stringify(toolInput)).digest('hex').slice(0, 16)
-    : '';
-  try {
-    writeFileSync(
-      pendingFilePath(sessionId, eventId),
-      JSON.stringify({ eventId, apiUrl, token, pattern, toolUseId, toolName, toolInputHash, createdAt: Date.now() }),
-      { mode: 0o600 },
-    );
-  } catch { /* best-effort */ }
-}
-
-function clearPending(sessionId, eventId) {
-  try { unlinkSync(pendingFilePath(sessionId, eventId)); } catch { /* ignore */ }
-}
+import {
+  writePending,
+  clearPending,
+  cancelOrphansForSession,
+  postCancel,
+} from './lib/pending-files.mjs';
+import { buildEventPayload } from './lib/hook-runtime.mjs';
 
 // --- Description builders ---
 
@@ -124,35 +103,6 @@ function exitWithOutput(output) {
   setTimeout(() => {
     process.exit(0);
   }, 3000).unref();
-}
-
-// --- Encryption helper ---
-
-function encryptSensitiveFields(config, fields) {
-  const key = config?.encryptionKey;
-  if (!key) return null;
-
-  // Full payload for RTDB (includes toolInput — can be large)
-  const full = encryptFields(key, {
-    toolInput: fields.toolInput,
-    description: fields.description,
-    ...(fields.context && { context: fields.context }),
-    ...(fields.cwd && { cwd: fields.cwd }),
-    ...(fields.sessionName && { sessionName: fields.sessionName }),
-  });
-
-  // Small notification payload for FCM push (description + sessionName)
-  const notif = encryptFields(key, {
-    description: fields.description,
-    ...(fields.sessionName && { sessionName: fields.sessionName }),
-  });
-
-  return {
-    encryptedPayload: full.encryptedPayload,
-    iv: full.iv,
-    encryptedNotif: notif.encryptedPayload,
-    notifIv: notif.iv,
-  };
 }
 
 // --- Skip detection ---
@@ -235,29 +185,7 @@ async function main() {
   // hook couldn't clean up). Claude Code does NOT fire PostToolUseFailure for
   // rejected tools, so orphan cleanup is the only resolution path.
   // All orphans are marked as 'cancelled'.
-  try {
-    const nudgeDir = join(homedir(), '.nudge');
-    const prefix = `pending-${sessionId}-`;
-    const orphaned = readdirSync(nudgeDir).filter(
-      (f) => f.startsWith(prefix) && f.endsWith('.json'),
-    );
-    for (const file of orphaned) {
-      const filePath = join(nudgeDir, file);
-      try {
-        const pending = JSON.parse(readFileSync(filePath, 'utf-8'));
-        unlinkSync(filePath);
-        fetch(`${apiUrl}/eventsRespond/${pending.eventId}/respond`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${pending.token}`,
-          },
-          body: JSON.stringify({ action: 'cancelled', reason: 'Cancelled in terminal' }),
-          signal: AbortSignal.timeout(5_000),
-        }).catch(() => {});
-      } catch { /* ignore individual file errors */ }
-    }
-  } catch { /* ignore — best effort */ }
+  cancelOrphansForSession(sessionId);
 
   // Build event payload
   const description = buildDescription(toolName, toolInput);
@@ -292,28 +220,22 @@ async function main() {
     description: isAskUser ? askUserQuestion || description : description,
     ...(cwd && { cwd }),
   };
-  const encrypted = encryptSensitiveFields(config, sensitiveFields);
 
-  const payload = {
-    provider: PROVIDER,
-    pluginVersion: SERVER_VERSION,
-    toolName,
-    pattern: isAskUser ? 'elicitation' : 'approval',
-    sessionId,
-    ...(sessionName && { sessionName }),
-    ...(isAskUser && askUserOptions && { options: askUserOptions }),
-    ...(isAskUser && { multiSelect: askUserMultiSelect }),
-    ...(encrypted
-      ? {
-          encryptedPayload: encrypted.encryptedPayload,
-          iv: encrypted.iv,
-          encryptedNotif: encrypted.encryptedNotif,
-          notifIv: encrypted.notifIv,
-          toolInput: {},
-          description: isAskUser ? 'Question for you' : `${toolName} requires approval`,
-        }
-      : sensitiveFields),
-  };
+  const payload = buildEventPayload({
+    base: {
+      provider: PROVIDER,
+      pluginVersion: SERVER_VERSION,
+      toolName,
+      pattern: isAskUser ? 'elicitation' : 'approval',
+      sessionId,
+      ...(sessionName && { sessionName }),
+      ...(isAskUser && askUserOptions && { options: askUserOptions }),
+      ...(isAskUser && { multiSelect: askUserMultiSelect }),
+    },
+    sensitive: sensitiveFields,
+    config,
+    fallbackDescription: isAskUser ? 'Question for you' : `${toolName} requires approval`,
+  });
 
   // POST event
   let createResp;
@@ -355,8 +277,14 @@ async function main() {
   }
 
   // Track this event so PostToolUse can cancel it if the user bypassed via terminal.
-  const eventPattern = isAskUser ? 'elicitation' : 'approval';
-  writePending(sessionId, eventId, apiUrl, token, eventPattern, hookData.tool_use_id, toolName, toolInput);
+  writePending(sessionId, eventId, {
+    apiUrl,
+    token,
+    pattern: isAskUser ? 'elicitation' : 'approval',
+    toolUseId: hookData.tool_use_id,
+    toolName,
+    toolInput,
+  });
 
   process.stderr.write(
     isAskUser
@@ -371,15 +299,8 @@ async function main() {
     if (cancelRequested) return;
     cancelRequested = true;
     clearPending(sessionId, eventId);
-    fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ action: 'cancelled', reason: 'Escaped in terminal' }),
-      signal: AbortSignal.timeout(5_000),
-    }).catch(() => {}).finally(() => process.exit(0));
+    postCancel({ apiUrl, eventId, token, reason: 'Escaped in terminal' })
+      .finally(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   };
 

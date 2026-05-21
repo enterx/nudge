@@ -67,7 +67,7 @@ nudge notify "Hello"                    # Send a test notification
 nudge ask "Pick env" -o dev:Dev -o prod:Prod
 nudge approve "Deploy v1.2.3 to prod?" && ./deploy.sh
 nudge status                            # Check connection / config
-nudge mode terminal                     # Toggle ask mode (or `nudge`)
+nudge status --mode terminal            # Toggle ask mode (or `nudge`)
 ```
 
 ## CLI reference
@@ -80,9 +80,9 @@ Pair your phone with this machine. Generates a pairing code; enter it in the Nud
 
 Prints pairing state, server connectivity, auth token validity, current ask mode, and CLI/backend versions. Exits **3** if not paired.
 
-### `nudge mode <nudge|terminal> [--json]`
+### `nudge mode <nudge|terminal> [--json]` *(deprecated)*
 
-Switch ask mode. `nudge` sends questions to your phone (AFK); `terminal` keeps them in the terminal (desk). Alias for `nudge status --mode <target>`.
+Deprecated alias for `nudge status --mode <target>`. Prints a deprecation warning and forwards to `status`. Will be removed in v1.2.
 
 ### `nudge notify <body> [options]`
 
@@ -182,13 +182,30 @@ Stored at `~/.nudge/config` (JSON, `chmod 600`). Created automatically by `nudge
 | `NUDGE_API_URL` | (from config) | Override the API URL |
 | `NUDGE_CONFIG_PATH` | `~/.nudge/config` | Override the config file location |
 | `NUDGE_DEBUG` | unset | Set to `1` for debug logging |
+| `NUDGE_JSON_VERSION` | `1` | Set to `2` to opt into the unified JSON envelope (see below) |
+
+### JSON output
+
+By default, `--json` emits a per-command ad-hoc shape (e.g. `{ "approved": true, "reason": "" }`).
+
+Set `NUDGE_JSON_VERSION=2` to opt into a unified envelope across every command:
+
+```json
+{ "ok": true,  "command": "ask",      "data": { "selectedOptions": ["dev"], "freeText": "" } }
+{ "ok": true,  "command": "approve",  "data": { "approved": false, "reason": "rolling back" } }
+{ "ok": false, "command": "ask",      "error": { "code": "NOT_PAIRED", "message": "..." } }
+```
+
+Error codes: `USAGE`, `NOT_PAIRED`, `NETWORK`, `VALIDATION`, `CANCELLED`, `ERROR`. In v2, errors are emitted to **stdout** (not stderr) so a single JSON parse covers both success and failure paths. The exit code still carries the same semantics (`0` success, `1` denied, `2` usage, `3` not paired, `4` network, `5` validation, `130` cancelled).
+
+The v1 shape will remain available until v2.0.
 
 ### Ask modes
 
 - **`nudge`** (default): Questions go to your phone.
 - **`terminal`**: Questions stay in the terminal.
 
-Toggle with `nudge mode nudge` / `nudge mode terminal`.
+Toggle with `nudge status --mode nudge` / `nudge status --mode terminal`.
 
 ## Repository structure
 

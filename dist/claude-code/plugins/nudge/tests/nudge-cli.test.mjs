@@ -147,10 +147,29 @@ await test('mode with invalid target exits 2', async () => {
   assert.match(stderr, /must be "nudge" or "terminal"/);
 });
 
-await test('approve with --input invalid JSON exits 2', async () => {
-  const { code, stderr } = await runCli(['approve', 'deploy', '--input', '{not json']);
-  assert.equal(code, 2);
-  assert.match(stderr, /--input must be valid JSON/);
+await test('mode prints deprecation warning before delegating to status', async () => {
+  const { code, stderr } = await runCli(['mode', 'nudge'], ENV_UNPAIRED);
+  // unpaired → exits 3 from cmdStatus
+  assert.equal(code, 3);
+  assert.match(stderr, /`nudge mode` is deprecated/);
+  assert.match(stderr, /status --mode/);
+});
+
+await test('mode help shows deprecation notice', async () => {
+  const { code, stdout } = await runCli(['mode', '--help']);
+  assert.equal(code, 0);
+  assert.match(stdout, /DEPRECATED/);
+});
+
+await test('approve ignores legacy hidden flags with a warning', async () => {
+  const { code, stderr } = await runCli(
+    ['approve', 'deploy', '--input', '{"x":1}', '--tool', 'Bash'],
+    ENV_UNPAIRED,
+  );
+  // unpaired → exits 3, but the warnings should appear on stderr
+  assert.equal(code, 3);
+  assert.match(stderr, /--input.*no longer supported/);
+  assert.match(stderr, /--tool.*no longer supported/);
 });
 
 await test('status with no config exits 3 (not paired)', async () => {
@@ -165,6 +184,56 @@ await test('status --json with no config emits JSON and exits 3', async () => {
   const data = JSON.parse(stdout.trim());
   assert.equal(data.paired, false);
   assert.match(data.message, /nudge pair/);
+});
+
+// --- JSON envelope v2 (opt-in via NUDGE_JSON_VERSION=2) ---
+
+await test('v2 envelope: status --json wraps payload with ok/command/data', async () => {
+  const { code, stdout } = await runCli(
+    ['status', '--json'],
+    { ...ENV_UNPAIRED, NUDGE_JSON_VERSION: '2' },
+  );
+  assert.equal(code, 3);
+  const parsed = JSON.parse(stdout.trim());
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'status');
+  assert.equal(parsed.data.paired, false);
+  assert.match(parsed.data.message, /nudge pair/);
+});
+
+await test('v2 envelope: ask --json unpaired emits ok:false error envelope on stdout', async () => {
+  const { code, stdout } = await runCli(
+    ['ask', 'q?', '-o', 'a:A', '-o', 'b:B', '--json'],
+    { ...ENV_UNPAIRED, NUDGE_JSON_VERSION: '2' },
+  );
+  assert.equal(code, 3);
+  const parsed = JSON.parse(stdout.trim());
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.command, 'ask');
+  assert.equal(parsed.error.code, 'NOT_PAIRED');
+  assert.match(parsed.error.message, /not configured|re-pair|not paired/i);
+});
+
+await test('v2 envelope: usage error on --json emits ok:false USAGE on stdout', async () => {
+  const { code, stdout } = await runCli(
+    ['ask', 'q?', '--json'],
+    { NUDGE_JSON_VERSION: '2' },
+  );
+  assert.equal(code, 2);
+  const parsed = JSON.parse(stdout.trim());
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.error.code, 'USAGE');
+  assert.match(parsed.error.message, /at least 2 options/);
+});
+
+await test('v2 envelope: default mode (no env) still emits v1 shape', async () => {
+  const { code, stdout } = await runCli(['status', '--json'], ENV_UNPAIRED);
+  assert.equal(code, 3);
+  const parsed = JSON.parse(stdout.trim());
+  // v1: no top-level `ok` / `command` keys
+  assert.equal(parsed.ok, undefined);
+  assert.equal(parsed.command, undefined);
+  assert.equal(parsed.paired, false);
 });
 
 await test('approve with no config exits 3 (not paired)', async () => {

@@ -24,23 +24,9 @@
  * Dependencies: None (Node.js built-ins only)
  */
 
-import { createHash } from 'node:crypto';
-import { readFileSync, unlinkSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { unlinkSync } from 'node:fs';
 import { getSessionId } from './lib/constants.mjs';
-
-function hashToolInput(input, toolName) {
-  if (!input) return '';
-  let obj = input;
-  // AskUserQuestion: PostToolUse adds answers/annotations to tool_input
-  // that weren't present at PermissionRequest time. Strip them to match.
-  if (toolName === 'AskUserQuestion') {
-    const { answers, annotations, ...rest } = obj;
-    obj = rest;
-  }
-  return createHash('sha256').update(JSON.stringify(obj)).digest('hex').slice(0, 16);
-}
+import { hashToolInput, listPendingForSession } from './lib/pending-files.mjs';
 
 /**
  * Extract the user's answer from AskUserQuestion tool_response.
@@ -99,32 +85,12 @@ async function main() {
   const currentToolInputHash = hashToolInput(hookData.tool_input, hookData.tool_name);
 
   const sessionId = getSessionId(hookData.session_id);
-  const nudgeDir = join(homedir(), '.nudge');
-  const prefix = `pending-${sessionId}-`;
-
-  // Find all pending files for this session
-  let pendingFiles;
-  try {
-    pendingFiles = readdirSync(nudgeDir).filter(
-      (f) => f.startsWith(prefix) && f.endsWith('.json'),
-    );
-  } catch {
-    process.exit(0);
-  }
-
-  if (pendingFiles.length === 0) process.exit(0);
+  const pendingEntries = listPendingForSession(sessionId);
+  if (pendingEntries.length === 0) process.exit(0);
 
   // Resolve each pending event with the correct action
   await Promise.all(
-    pendingFiles.map(async (file) => {
-      const filePath = join(nudgeDir, file);
-      let pending;
-      try {
-        pending = JSON.parse(readFileSync(filePath, 'utf-8'));
-      } catch {
-        return;
-      }
-
+    pendingEntries.map(async ({ file: filePath, data: pending }) => {
       const { eventId, apiUrl, token, pattern, toolUseId, toolInputHash: pendingToolInputHash } = pending;
       if (!eventId || !apiUrl || !token) return;
 

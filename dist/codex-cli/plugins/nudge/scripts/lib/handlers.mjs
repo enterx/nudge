@@ -26,7 +26,7 @@ import { readConfig, getApiUrl, updateConfigKey } from './config.mjs';
 import { getValidToken } from './token-utils.mjs';
 import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
-import { encryptFields } from './crypto.mjs';
+import { encryptSensitiveFields as encryptSensitiveFieldsShared } from './hook-runtime.mjs';
 
 const MAX_STRING_LENGTH = 4000;
 
@@ -55,34 +55,8 @@ function persistSessionName(name) {
   }
 }
 
-function getEncryptionKey() {
-  const config = readConfig();
-  return config?.encryptionKey || null;
-}
-
 function encryptSensitiveFields(fields) {
-  const key = getEncryptionKey();
-  if (!key) return null;
-
-  const full = encryptFields(key, {
-    toolInput: fields.toolInput,
-    description: fields.description,
-    ...(fields.context && { context: fields.context }),
-    ...(fields.cwd && { cwd: fields.cwd }),
-    ...(fields.sessionName && { sessionName: fields.sessionName }),
-  });
-
-  const notif = encryptFields(key, {
-    description: fields.description,
-    ...(fields.sessionName && { sessionName: fields.sessionName }),
-  });
-
-  return {
-    encryptedPayload: full.encryptedPayload,
-    iv: full.iv,
-    encryptedNotif: notif.encryptedPayload,
-    notifIv: notif.iv,
-  };
+  return encryptSensitiveFieldsShared(readConfig(), fields);
 }
 
 async function getAuthContext() {
