@@ -97,6 +97,7 @@ positional arguments, the first is the title and the rest become the body.
 | `--body B` | Notification body |
 | `--level L` | `info` (default), `success`, `warning`, `error` |
 | `--context C` | Free-form context shown on mobile |
+| `--image <path>` / `--file <path>` *(repeatable)* | Attach an image or file (≤ 2MB per file, inlined into the encrypted payload) |
 | `--json` | Emit `{ "sent": true }` to stdout |
 
 ### `nudge ask <question> [options]`
@@ -117,6 +118,7 @@ Default output: one selected value per line, then a blank line, then the free-te
 | `--files a,b,c` | Comma-separated list of affected files |
 | `--exit-code N` | Numeric exit code (e.g. from a failing test) |
 | `--tool-name S` | Short label for the tool/source (e.g. `go test`, `eslint`) |
+| `--image <path>` / `--file <path>` *(repeatable)* | Attach an image or file (≤ 2MB per file). Auto-detects mime from extension. |
 | `--json` | Emit JSON to stdout |
 
 ### `nudge approve <description> [options]`
@@ -129,6 +131,7 @@ Send an approval request. **Exits 0 on approve, 1 on deny or follow-up action** 
 | `--action key:label[:description]` *(repeatable)* | Follow-up action button (e.g. "Show diff first"). |
 | `--ttl <seconds>` | Give up waiting after N seconds. Exit `6` (TIMEOUT). |
 | `--diff <path>` / `--files a,b,c` / `--exit-code N` / `--tool-name S` | Structured context (same semantics as `ask`) |
+| `--image <path>` / `--file <path>` *(repeatable)* | Attach an image or file (≤ 2MB per file) — useful for "approve this screenshot" flows |
 | `--json` | Emit `{ approved, reason, selectedAction?, timedOut? }` to stdout |
 
 ### `nudge run [options] -- <cmd> [args...]`

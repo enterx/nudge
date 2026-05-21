@@ -43,6 +43,10 @@ echo "--- run-wrap.test.mjs ---"
 node tests/run-wrap.test.mjs
 
 echo ""
+echo "--- attachments.test.mjs ---"
+node tests/attachments.test.mjs
+
+echo ""
 echo "--- sse.test.mjs ---"
 node tests/sse.test.mjs
 
