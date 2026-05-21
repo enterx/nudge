@@ -39,6 +39,10 @@ echo "--- hook-runtime.test.mjs ---"
 node tests/hook-runtime.test.mjs
 
 echo ""
+echo "--- run-wrap.test.mjs ---"
+node tests/run-wrap.test.mjs
+
+echo ""
 echo "--- sse.test.mjs ---"
 node tests/sse.test.mjs
 

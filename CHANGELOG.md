@@ -5,6 +5,12 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`nudge run -- <cmd> [args...]`** — wrap a child command, stream its stdio through, and notify on exit with exit code, duration, and the last N lines of output. Drop-in wrap: the child's exit code propagates so `nudge run -- make test` is interchangeable with `make test`. Flags: `--on success|fail|always`, `--tail N`, `--title T`, `--ask` (use approve flow instead of notify), `--context C`, `--session N`.
+
 ## [1.1.0] - 2026-05-21
 
 Minor release rolling up the cleanup pass and the feature additions that landed between 1.0.2 and now. CLI-side only — no backend or mobile-app changes required for any of this to be usable (richer features light up incrementally as mobile/backend catch up).
