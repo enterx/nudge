@@ -38,6 +38,7 @@ export function encryptSensitiveFields(config, fields) {
     ...(fields.context && { context: fields.context }),
     ...(fields.cwd && { cwd: fields.cwd }),
     ...(fields.sessionName && { sessionName: fields.sessionName }),
+    ...(fields.structured && { structured: fields.structured }),
   });
 
   const notif = encryptFields(key, {

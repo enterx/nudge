@@ -96,7 +96,7 @@ await test('approve without description exits 2', async () => {
 await test('ask without options exits 2', async () => {
   const { code, stderr } = await runCli(['ask', 'test?']);
   assert.equal(code, 2);
-  assert.match(stderr, /at least 2 options/);
+  assert.match(stderr, /requires options.*--text.*--action/);
 });
 
 await test('ask without question exits 2', async () => {
@@ -159,6 +159,87 @@ await test('mode help shows deprecation notice', async () => {
   const { code, stdout } = await runCli(['mode', '--help']);
   assert.equal(code, 0);
   assert.match(stdout, /DEPRECATED/);
+});
+
+// --- richer ask: --text / --action / structured context ---
+
+await test('ask --text alone is enough (no -o required)', async () => {
+  // Unpaired → exits 3 from handler. If parser still rejected, we'd see exit 2.
+  const { code, stderr } = await runCli(
+    ['ask', 'What should we name this?', '--text'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('ask --action alone is enough (no -o required)', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '--action', 'verify:Run /verify'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('ask --action with bad spec exits 2', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '--action', 'novalue']);
+  assert.equal(code, 2);
+  assert.match(stderr, /value:label/i);
+});
+
+await test('ask with single -o still rejected (must be 2-4)', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '-o', 'a:A']);
+  assert.equal(code, 2);
+  assert.match(stderr, /at least 2 options/);
+});
+
+await test('ask -o + --action coexist (no required option-count error)', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '-o', 'yes:Yes', '-o', 'no:No', '--action', 'diff:"Show diff"'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('approve accepts --action', async () => {
+  const { code, stderr } = await runCli(
+    ['approve', 'Deploy?', '--action', 'verify:Run /verify first'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('--exit-code non-numeric exits 2', async () => {
+  const { code, stderr } = await runCli(
+    ['notify', 'Build', 'done', '--exit-code', 'abc'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /--exit-code must be a number/);
+});
+
+await test('--diff with missing file exits 2 with helpful message', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '--text', '--diff', '/does/not/exist.diff'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /--diff: cannot read/);
+});
+
+await test('--files comma-split, --tool-name, --exit-code reach the handler (validated past parse)', async () => {
+  // Combining all structured flags. Parsing should succeed; we exit at the
+  // not-paired stage. Failure earlier in parse would surface here.
+  const { code, stderr } = await runCli(
+    ['notify', 'Build', 'failed',
+     '--files', 'src/a.go,src/b.go',
+     '--exit-code', '2',
+     '--tool-name', 'go test'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
 });
 
 // --- cancel ---
@@ -364,7 +445,7 @@ await test('v2 envelope: usage error on --json emits ok:false USAGE on stdout', 
   const parsed = JSON.parse(stdout.trim());
   assert.equal(parsed.ok, false);
   assert.equal(parsed.error.code, 'USAGE');
-  assert.match(parsed.error.message, /at least 2 options/);
+  assert.match(parsed.error.message, /requires options.*--text.*--action/);
 });
 
 await test('v2 envelope: default mode (no env) still emits v1 shape', async () => {

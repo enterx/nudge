@@ -99,25 +99,35 @@ positional arguments, the first is the title and the rest become the body.
 | `--context C` | Free-form context shown on mobile |
 | `--json` | Emit `{ "sent": true }` to stdout |
 
-### `nudge ask <question> -o value:label [-o ...] [options]`
+### `nudge ask <question> [options]`
 
-Send a question and wait for the user to pick on their phone. Default output is the selected `value`s, one per line, optionally followed by a blank line and a free-text reply. With `--json`, prints `{ selectedOptions, freeText }`.
+Send a question and wait for the user to answer on their phone. You need **at least one** of `-o`, `--text`, or `--action` (or any combination).
+
+Default output: one selected value per line, then a blank line, then the free-text reply, then `action: <key>` when the user picked a follow-up action. With `--json`, prints `{ selectedOptions, freeText, selectedAction? }`.
 
 | Option | Description |
 |--------|-------------|
-| `-o value:label[:description]` *(required, 2-4 times)* | A choice |
-| `--multi` | Allow multiple selections |
+| `-o value:label[:description]` *(0, or 2–4 times)* | A curated choice |
+| `--multi` | Allow multiple `-o` selections |
+| `--text` | Allow free-form text input (no `-o` required) |
+| `--action key:label[:description]` *(repeatable)* | Follow-up action button (e.g. "Run /verify first"). The user's pick comes back as `selectedAction`. |
 | `--context C` | Free-form context shown on mobile |
+| `--diff <path>` | Attach a diff (file contents inlined into the encrypted payload) |
+| `--files a,b,c` | Comma-separated list of affected files |
+| `--exit-code N` | Numeric exit code (e.g. from a failing test) |
+| `--tool-name S` | Short label for the tool/source (e.g. `go test`, `eslint`) |
 | `--json` | Emit JSON to stdout |
 
 ### `nudge approve <description> [options]`
 
-Send an approval request. **Exits 0 on approve, 1 on deny** — designed for shell chains like `nudge approve "..." && ./deploy.sh`.
+Send an approval request. **Exits 0 on approve, 1 on deny or follow-up action** — designed for shell chains like `nudge approve "..." && ./deploy.sh`. When the user taps a follow-up `--action` instead of approve/deny, exit is still `1` (shell chain skips the next step) and `selectedAction` is set so an agent reading JSON can react.
 
 | Option | Description |
 |--------|-------------|
 | `--context C` | Free-form context shown on mobile |
-| `--json` | Emit `{ approved, reason }` to stdout |
+| `--action key:label[:description]` *(repeatable)* | Follow-up action button (e.g. "Show diff first"). |
+| `--diff <path>` / `--files a,b,c` / `--exit-code N` / `--tool-name S` | Structured context (same semantics as `ask`) |
+| `--json` | Emit `{ approved, reason, selectedAction? }` to stdout |
 
 ### `nudge cancel <event-id|--last|--all|--session name>`
 

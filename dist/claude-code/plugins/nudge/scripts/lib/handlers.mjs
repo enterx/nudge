@@ -92,9 +92,12 @@ function notifyCreated(hooks, ctx) {
 export async function runAskUser(args, hooks = {}) {
   const {
     question,
-    options,
+    options = [],
+    actions = [],
     multiSelect = false,
+    textOnly = false,
     context,
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -107,21 +110,36 @@ export async function runAskUser(args, hooks = {}) {
   validateStringLength(question, 'question');
   validateStringLength(context, 'context');
   validateStringLength(sessionName, 'sessionName');
-  if (!Array.isArray(options) || options.length < 2 || options.length > 4) {
+
+  if (!Array.isArray(options)) {
+    throw new Error('options must be an array');
+  }
+  if (!Array.isArray(actions)) {
+    throw new Error('actions must be an array');
+  }
+  // Need *something* for the user to act on. Either curated options,
+  // free-form text, or follow-up actions count.
+  if (!textOnly && options.length === 0 && actions.length === 0) {
+    throw new Error('ask requires options, --text, or at least one --action');
+  }
+  if (options.length > 0 && (options.length < 2 || options.length > 4)) {
     throw new Error('options must be an array of 2-4 items');
   }
-  for (const opt of options) {
-    if (!opt.value || !opt.label) {
-      throw new Error('Each option must have "value" and "label"');
+  for (const list of [options, actions]) {
+    for (const opt of list) {
+      if (!opt.value || !opt.label) {
+        throw new Error('Each option/action must have "value" and "label"');
+      }
     }
   }
 
   const { token, apiUrl } = await getAuthContext();
 
   const sensitiveFields = {
-    toolInput: { question, options, multiSelect },
+    toolInput: { question, options, multiSelect, ...(textOnly && { textOnly }), ...(actions.length > 0 && { actions }) },
     description: question,
     ...(context && { context }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -137,6 +155,8 @@ export async function runAskUser(args, hooks = {}) {
       ...(sessionName && { sessionName }),
       options,
       multiSelect,
+      ...(textOnly && { textOnly: true }),
+      ...(actions.length > 0 && { actions }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -184,6 +204,10 @@ export async function runAskUser(args, hooks = {}) {
     return {
       selectedOptions: decision.selectedOptions || [],
       freeText: decision.reason || '',
+      // `decision.action` is the overall outcome (approved/denied/answered/cancelled).
+      // `decision.selectedAction` (forward-looking, mobile to implement) carries the
+      // user's choice when they tap one of the follow-up `--action` buttons.
+      ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
     };
   } finally {
     clearPending(sessionId, eventId);
@@ -199,6 +223,8 @@ export async function runApprove(args, hooks = {}) {
     context,
     toolInput: argToolInput,
     cwd,
+    actions = [],
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -216,14 +242,27 @@ export async function runApprove(args, hooks = {}) {
   validateStringLength(context, 'context');
   validateStringLength(sessionName, 'sessionName');
 
+  if (!Array.isArray(actions)) {
+    throw new Error('actions must be an array');
+  }
+  for (const a of actions) {
+    if (!a.value || !a.label) {
+      throw new Error('Each action must have "value" and "label"');
+    }
+  }
+
   const { token, apiUrl } = await getAuthContext();
   const approvalLabel = toolName === 'nudge_approve' ? 'Approval' : toolName;
 
   const sensitiveFields = {
-    toolInput: argToolInput || { description },
+    toolInput: {
+      ...(argToolInput || { description }),
+      ...(actions.length > 0 && { actions }),
+    },
     description,
     ...(context && { context }),
     ...(cwd && { cwd }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -237,6 +276,7 @@ export async function runApprove(args, hooks = {}) {
       pattern: 'approval',
       sessionId: getSessionIdLazy(),
       ...(sessionName && { sessionName }),
+      ...(actions.length > 0 && { actions }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -284,6 +324,7 @@ export async function runApprove(args, hooks = {}) {
     return {
       approved: decision.action === 'approved',
       reason: decision.reason || '',
+      ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
     };
   } finally {
     clearPending(sessionId, eventId);
@@ -298,6 +339,7 @@ export async function runNotify(args) {
     body,
     level = 'info',
     context,
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -326,6 +368,7 @@ export async function runNotify(args) {
     toolInput: {},
     description: body,
     ...(context && { context }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 

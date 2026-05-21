@@ -22,6 +22,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { SERVER_VERSION } from './lib/constants.mjs';
 import {
@@ -41,7 +42,7 @@ const CLI_DIR = dirname(fileURLToPath(import.meta.url));
 // --- Tiny argv parser (no deps) ---------------------------------------------
 
 function parseArgs(argv) {
-  const args = { _: [], options: [], flags: new Set() };
+  const args = { _: [], options: [], actions: [], flags: new Set() };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (tok === '--') {
@@ -56,6 +57,10 @@ function parseArgs(argv) {
         const value = inlineValue ?? argv[++i];
         if (value == null) usageError(`--${key} requires a value`);
         args.options.push(value);
+      } else if (key === 'action') {
+        const value = inlineValue ?? argv[++i];
+        if (value == null) usageError('--action requires a value');
+        args.actions.push(value);
       } else if (inlineValue !== undefined) {
         args[key] = inlineValue;
       } else if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
@@ -106,6 +111,37 @@ function optionString(args, key) {
     usageError(`--${key} requires a value`);
   }
   return value;
+}
+
+// Structured-context flags shared by ask/approve/notify.
+// Returns an object suitable for embedding inside the encrypted payload,
+// or undefined when no flag was passed.
+function parseStructured(args) {
+  const out = {};
+  if (args.diff) {
+    try {
+      out.diff = readFileSync(args.diff, 'utf-8');
+    } catch (err) {
+      usageError(`--diff: cannot read "${args.diff}": ${err.message}`);
+    }
+  }
+  if (args.files) {
+    out.files = String(args.files)
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean);
+  }
+  if (args['exit-code'] !== undefined) {
+    const n = Number(args['exit-code']);
+    if (!Number.isFinite(n)) {
+      usageError(`--exit-code must be a number (got "${args['exit-code']}")`);
+    }
+    out.exitCode = n;
+  }
+  if (args['tool-name']) {
+    out.toolName = String(args['tool-name']);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 // --- Output helpers ----------------------------------------------------------
@@ -260,19 +296,28 @@ const HELP_BY_CMD = {
     'Usage: nudge notify <body>\n' +
     '       nudge notify <title> <body>\n' +
     '       nudge notify --title T --body B [--level info|success|warning|error]\n' +
-    '                    [--context C] [--json]\n' +
+    '                    [--context C] [--diff <path>] [--files a,b,c]\n' +
+    '                    [--exit-code N] [--tool-name S] [--json]\n' +
     '  Send a one-way push notification. One positional arg is the body; title defaults to "Nudge".\n' +
     '  With two or more positional args, the first is title and the rest become body.\n' +
     '  --title and --body override positional values.',
   ask:
     'Usage: nudge ask <question> -o value:label [-o ...] [--multi]\n' +
-    '                  [--context C] [--json]\n' +
-    '  Send a question, wait for the user to pick on their phone.\n' +
-    '  Default output: one selected value per line, then a blank line, then free-text reply.\n' +
-    '  With --json: { selectedOptions, freeText }.',
+    '                  [--text] [--action key:label[:desc]] [...]\n' +
+    '                  [--context C] [--diff <path>] [--files a,b,c]\n' +
+    '                  [--exit-code N] [--tool-name S] [--json]\n' +
+    '  Send a question, wait for the user to answer on their phone.\n' +
+    '  Provide curated options via -o, free-form input via --text, follow-up\n' +
+    '  actions via --action, or any combination. At least one of those three\n' +
+    '  must be present.\n' +
+    '  Default output: one selected value per line, then a blank line, then\n' +
+    '  free-text reply, then "action: <key>" when a follow-up action was picked.\n' +
+    '  With --json: { selectedOptions, freeText, selectedAction? }.',
   approve:
-    'Usage: nudge approve <description> [--context C] [--json]\n' +
-    '  Send an approval request. Exit 0 if approved, 1 if denied.',
+    'Usage: nudge approve <description> [--context C] [--action key:label[:desc]] [...]\n' +
+    '                       [--diff <path>] [--files a,b,c] [--exit-code N] [--tool-name S] [--json]\n' +
+    '  Send an approval request. Exit 0 if approved, 1 if denied or if the user\n' +
+    '  picks a follow-up --action (so `approve && deploy` stays safe).',
   cancel:
     'Usage: nudge cancel <event-id>\n' +
     '       nudge cancel --session <name>\n' +
@@ -342,11 +387,13 @@ async function cmdNotify(args) {
   const body = args.body || positionalBody;
   if (!body) usageError('notify requires a body (pass a message or --body)');
 
+  const structured = parseStructured(args);
   const payload = {
     title,
     body,
     ...(args.level && { level: args.level }),
     ...(args.context && { context: args.context }),
+    ...(structured && { structured }),
     ...(args.session && { sessionName: args.session }),
   };
   const result = await runNotify(payload);
@@ -356,17 +403,29 @@ async function cmdNotify(args) {
 async function cmdAsk(args) {
   const question = args._.slice(1).join(' ').trim();
   if (!question) usageError('ask requires a question argument');
-  if (args.options.length < 2) {
+
+  const textOnly = args.flags.has('text');
+  const options = args.options.map(parseOption);
+  const actions = args.actions.map(parseOption);
+
+  if (!textOnly && options.length === 0 && actions.length === 0) {
+    usageError('ask requires options (-o), --text, or at least one --action');
+  }
+  if (options.length > 0 && options.length < 2) {
     usageError('ask requires at least 2 options (use -o value:label)');
   }
+
   const session = optionString(args, 'session');
-  const options = args.options.map(parseOption);
+  const structured = parseStructured(args);
 
   const payload = {
     question,
     options,
+    actions,
     multiSelect: args.flags.has('multi'),
+    ...(textOnly && { textOnly: true }),
     ...(args.context && { context: args.context }),
+    ...(structured && { structured }),
     ...(session && { sessionName: session }),
   };
 
@@ -380,6 +439,10 @@ async function cmdAsk(args) {
   if (result.freeText) {
     if (lines.length > 0) lines.push('');
     lines.push(result.freeText);
+  }
+  if (result.selectedAction) {
+    if (lines.length > 0) lines.push('');
+    lines.push(`action: ${result.selectedAction}`);
   }
   if (lines.length === 0) lines.push('(no selection)');
 
@@ -399,8 +462,13 @@ async function cmdApprove(args) {
     }
   }
 
+  const actions = args.actions.map(parseOption);
+  const structured = parseStructured(args);
+
   const payload = {
     description,
+    ...(actions.length > 0 && { actions }),
+    ...(structured && { structured }),
     ...(args.context && { context: args.context }),
     ...(args.session && { sessionName: args.session }),
   };
@@ -411,11 +479,14 @@ async function cmdApprove(args) {
   clearCancel();
 
   const lines = [
-    result.approved ? 'Approved.' : 'Denied.',
+    result.approved ? 'Approved.' : (result.selectedAction ? `Action: ${result.selectedAction}` : 'Denied.'),
     ...(result.reason ? [result.reason] : []),
   ];
-  // In v2 JSON mode, "denied" is still a successful operation (the user
-  // exercised choice). The exit code carries the decision, not the envelope.
+  // In v2 JSON mode, "denied" / "selectedAction" are still a successful
+  // operation (the user exercised choice). The exit code carries the
+  // decision, not the envelope. A follow-up action is treated as
+  // not-approved for shell-chain safety (`approve && deploy` won't proceed
+  // when the user asked for something else first).
   printResult(result, lines);
 
   process.exit(result.approved ? 0 : 1);
