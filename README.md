@@ -119,6 +119,32 @@ Send an approval request. **Exits 0 on approve, 1 on deny** — designed for she
 | `--context C` | Free-form context shown on mobile |
 | `--json` | Emit `{ approved, reason }` to stdout |
 
+### `nudge cancel <event-id|--last|--all|--session name>`
+
+Cancel one or more in-flight mobile events **from another process**. Useful in CI cleanup traps, supervisor scripts, or when you want to dismiss an approval card from a different terminal without sending SIGINT to the original `nudge ask`/`approve` invocation.
+
+Targets are resolved against `~/.nudge/pending-*.json` — the same tracking files written by the CLI and the Claude Code permission hook.
+
+| Selector | Description |
+|----------|-------------|
+| `<event-id>` *(positional)* | Cancel exactly one event by its backend id |
+| `--session <name>` | Cancel every pending event whose `sessionName` (or `sessionId`) matches |
+| `--last` | Cancel only the most recently created pending event |
+| `--all` | Cancel every pending event for this host |
+
+Exactly one selector is required. `--last` / `--all` exit `0` when nothing is pending (no-op). `<event-id>` and `--session` exit `5` (validation) when no match is found.
+
+```bash
+# Safety net in CI: cancel any leftover mobile cards when the runner exits
+trap 'nudge cancel --all' EXIT
+
+# Cancel a specific approval from a sibling terminal
+nudge cancel evt-XYZ123
+
+# Cancel everything tagged with this work session
+nudge cancel --session "Auth refactor"
+```
+
 ### Global options
 
 | Option | Description |
@@ -154,6 +180,9 @@ ENV=$(nudge ask "Where should we ship?" -o staging:Staging -o prod:Prod --json |
 
 # Use Nudge from a coding AI — just shell out
 # (the AI calls Bash("nudge approve '...'") and reads the exit code)
+
+# Cancel a stuck approval from any process
+nudge cancel --last
 ```
 
 ## Configuration

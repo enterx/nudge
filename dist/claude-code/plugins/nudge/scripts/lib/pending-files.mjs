@@ -38,10 +38,12 @@ export function hashToolInput(input, toolName) {
 
 /**
  * Persist a pending event for later resolution. `toolInput` is hashed
- * here (callers don't need to hash themselves).
+ * here (callers don't need to hash themselves). `sessionId` is also
+ * stored in the body so `listAllPending` can group across sessions
+ * without parsing the filename.
  */
 export function writePending(sessionId, eventId, {
-  apiUrl, token, pattern, toolUseId, toolName, toolInput,
+  apiUrl, token, pattern, toolUseId, toolName, toolInput, sessionName,
 }) {
   const toolInputHash = hashToolInput(toolInput, toolName);
   try {
@@ -49,6 +51,8 @@ export function writePending(sessionId, eventId, {
       pendingFilePath(sessionId, eventId),
       JSON.stringify({
         eventId,
+        sessionId,
+        ...(sessionName && { sessionName }),
         apiUrl,
         token,
         pattern,
@@ -64,6 +68,39 @@ export function writePending(sessionId, eventId, {
 
 export function clearPending(sessionId, eventId) {
   try { unlinkSync(pendingFilePath(sessionId, eventId)); } catch { /* ignore */ }
+}
+
+/**
+ * Return every pending event under `~/.nudge`, decoded from disk.
+ * The `sessionId` field comes from the JSON body when present;
+ * otherwise it falls back to the prefix in the filename
+ * (`pending-{sessionId}-{eventId}.json`) so older files still group correctly.
+ * Files that fail to parse are skipped silently.
+ */
+export function listAllPending() {
+  let files;
+  try {
+    files = readdirSync(NUDGE_DIR).filter(
+      (f) => f.startsWith('pending-') && f.endsWith('.json'),
+    );
+  } catch {
+    return [];
+  }
+  const result = [];
+  for (const file of files) {
+    const fullPath = join(NUDGE_DIR, file);
+    try {
+      const data = JSON.parse(readFileSync(fullPath, 'utf-8'));
+      if (!data.sessionId) {
+        // Best-effort fallback for pre-1.2 pending files.
+        const stripped = file.slice('pending-'.length, -'.json'.length);
+        const lastDash = stripped.lastIndexOf('-');
+        if (lastDash > 0) data.sessionId = stripped.slice(0, lastDash);
+      }
+      result.push({ file: fullPath, data });
+    } catch { /* ignore malformed file */ }
+  }
+  return result;
 }
 
 /**

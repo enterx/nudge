@@ -30,6 +30,11 @@ import {
   runNotify,
   runStatus,
 } from './lib/handlers.mjs';
+import {
+  listAllPending,
+  clearPending,
+  postCancel,
+} from './lib/pending-files.mjs';
 
 const CLI_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -184,7 +189,7 @@ function classifyAndExit(err) {
     die(3, msg, 'NOT_PAIRED');
   } else if (/HTTP \d|fetch failed|ECONN|ENOTFOUND|SSE/i.test(msg)) {
     die(4, msg, 'NETWORK');
-  } else if (/required|must be|exceeds maximum|must have/i.test(msg)) {
+  } else if (/required|must be|exceeds maximum|must have|^no pending event/i.test(msg)) {
     die(5, msg, 'VALIDATION');
   } else {
     die(1, msg, 'ERROR');
@@ -222,6 +227,8 @@ Subcommands:
   notify "Hello"                Fire-and-forget notification
   ask <question> -o val:label   Send a question, wait for an answer
   approve <description>         Send an approval request, exit 0/1
+  cancel <event-id|--last|--all|--session name>
+                                Cancel an in-flight mobile event from another process
 
 Common options:
   --json                        Emit JSON to stdout (default: human-readable)
@@ -266,6 +273,16 @@ const HELP_BY_CMD = {
   approve:
     'Usage: nudge approve <description> [--context C] [--json]\n' +
     '  Send an approval request. Exit 0 if approved, 1 if denied.',
+  cancel:
+    'Usage: nudge cancel <event-id>\n' +
+    '       nudge cancel --session <name>\n' +
+    '       nudge cancel --last\n' +
+    '       nudge cancel --all\n' +
+    '  Cancel one or more in-flight mobile events from another process.\n' +
+    '  Exactly one selector must be given. Targets are taken from\n' +
+    '  ~/.nudge/pending-*.json — the same tracking files used by hooks.\n' +
+    '  Exit 0 on success (including "nothing to cancel"); 5 when an explicit\n' +
+    '  <event-id> or --session does not match any pending event.',
 };
 
 async function cmdPair() {
@@ -404,6 +421,97 @@ async function cmdApprove(args) {
   process.exit(result.approved ? 0 : 1);
 }
 
+// --- cmdCancel ---------------------------------------------------------------
+//
+// Resolve targets from `~/.nudge/pending-*.json`, then issue
+// `POST /eventsRespond/:id/respond {action: "cancelled"}` for each.
+// CLI-only — no backend changes required (uses the same endpoint that the
+// SIGINT path uses today).
+
+function selectorsGiven(args) {
+  const eventIdPositional = args._[1];
+  return [
+    eventIdPositional,
+    args.session,
+    args.flags.has('last'),
+    args.flags.has('all'),
+  ].filter(Boolean).length;
+}
+
+async function cmdCancel(args) {
+  const count = selectorsGiven(args);
+  if (count === 0) {
+    usageError('cancel requires exactly one selector: <event-id>, --session <name>, --last, or --all');
+  }
+  if (count > 1) {
+    usageError('cancel selectors are mutually exclusive — pick one of <event-id>, --session, --last, --all');
+  }
+
+  const pending = listAllPending();
+  const eventIdTarget = args._[1];
+  const sessionTarget = args.session;
+
+  let targets;
+  if (eventIdTarget) {
+    targets = pending.filter((p) => p.data.eventId === eventIdTarget);
+    if (targets.length === 0) {
+      throw new Error(`No pending event found with id "${eventIdTarget}"`);
+    }
+  } else if (sessionTarget) {
+    targets = pending.filter(
+      (p) => p.data.sessionName === sessionTarget || p.data.sessionId === sessionTarget,
+    );
+    if (targets.length === 0) {
+      throw new Error(`No pending events found for session "${sessionTarget}"`);
+    }
+  } else if (args.flags.has('last')) {
+    if (pending.length === 0) {
+      printResult({ cancelled: 0, events: [] }, ['No pending events to cancel.']);
+      return;
+    }
+    targets = [
+      pending.reduce((newest, p) =>
+        (p.data.createdAt ?? 0) > (newest.data.createdAt ?? 0) ? p : newest,
+      ),
+    ];
+  } else {
+    // --all
+    if (pending.length === 0) {
+      printResult({ cancelled: 0, events: [] }, ['No pending events to cancel.']);
+      return;
+    }
+    targets = pending;
+  }
+
+  const cancelled = [];
+  await Promise.all(targets.map(async ({ data }) => {
+    if (!data.eventId || !data.apiUrl || !data.token) return;
+    await postCancel({
+      apiUrl: data.apiUrl,
+      eventId: data.eventId,
+      token: data.token,
+      reason: 'Cancelled via nudge cancel',
+    });
+    clearPending(data.sessionId, data.eventId);
+    cancelled.push({
+      eventId: data.eventId,
+      sessionId: data.sessionId,
+      ...(data.sessionName && { sessionName: data.sessionName }),
+      ...(data.toolName && { toolName: data.toolName }),
+    });
+  }));
+
+  const lines = cancelled.length === 0
+    ? ['No pending events to cancel.']
+    : [
+        `Cancelled ${cancelled.length} event(s):`,
+        ...cancelled.map((c) =>
+          `  ${c.eventId}${c.sessionName ? ` — ${c.sessionName}` : ''}${c.toolName ? ` (${c.toolName})` : ''}`,
+        ),
+      ];
+  printResult({ cancelled: cancelled.length, events: cancelled }, lines);
+}
+
 // --- Dispatcher --------------------------------------------------------------
 
 const COMMANDS = {
@@ -413,6 +521,7 @@ const COMMANDS = {
   notify: cmdNotify,
   ask: cmdAsk,
   approve: cmdApprove,
+  cancel: cmdCancel,
 };
 
 async function main() {

@@ -27,6 +27,7 @@ import { getValidToken } from './token-utils.mjs';
 import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
 import { encryptSensitiveFields as encryptSensitiveFieldsShared } from './hook-runtime.mjs';
+import { writePending, clearPending } from './pending-files.mjs';
 
 const MAX_STRING_LENGTH = 4000;
 
@@ -162,19 +163,31 @@ export async function runAskUser(args, hooks = {}) {
     );
   }
 
+  const sessionId = getSessionIdLazy();
+  writePending(sessionId, eventId, {
+    apiUrl, token, pattern: 'elicitation', toolName: 'nudge_ask_user',
+    toolInput: { question, options, multiSelect }, sessionName,
+  });
+
   notifyCreated(hooks, {
     eventId,
     apiUrl,
     token,
-    cancel: () => cancelEventOnBackend(apiUrl, eventId, token),
+    cancel: () => {
+      clearPending(sessionId, eventId);
+      return cancelEventOnBackend(apiUrl, eventId, token);
+    },
   });
 
-  const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-
-  return {
-    selectedOptions: decision.selectedOptions || [],
-    freeText: decision.reason || '',
-  };
+  try {
+    const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
+    return {
+      selectedOptions: decision.selectedOptions || [],
+      freeText: decision.reason || '',
+    };
+  } finally {
+    clearPending(sessionId, eventId);
+  }
 }
 
 // --- runApprove ---
@@ -250,19 +263,31 @@ export async function runApprove(args, hooks = {}) {
     );
   }
 
+  const sessionId = getSessionIdLazy();
+  writePending(sessionId, eventId, {
+    apiUrl, token, pattern: 'approval', toolName,
+    toolInput: argToolInput || { description }, sessionName,
+  });
+
   notifyCreated(hooks, {
     eventId,
     apiUrl,
     token,
-    cancel: () => cancelEventOnBackend(apiUrl, eventId, token),
+    cancel: () => {
+      clearPending(sessionId, eventId);
+      return cancelEventOnBackend(apiUrl, eventId, token);
+    },
   });
 
-  const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-
-  return {
-    approved: decision.action === 'approved',
-    reason: decision.reason || '',
-  };
+  try {
+    const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
+    return {
+      approved: decision.action === 'approved',
+      reason: decision.reason || '',
+    };
+  } finally {
+    clearPending(sessionId, eventId);
+  }
 }
 
 // --- runNotify ---
