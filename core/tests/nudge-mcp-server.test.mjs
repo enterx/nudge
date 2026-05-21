@@ -99,7 +99,7 @@ await test('initialize returns correct protocol version and capabilities', async
     assert.equal(resp.result.protocolVersion, '2024-11-05');
     assert.deepEqual(resp.result.capabilities, { tools: {} });
     assert.equal(resp.result.serverInfo.name, 'nudge-mcp');
-    assert.equal(resp.result.serverInfo.version, '1.0.1');
+    assert.equal(resp.result.serverInfo.version, '1.0.2');
   } finally {
     proc.kill();
   }

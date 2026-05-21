@@ -128,12 +128,15 @@ const FALLBACK_SESSION_ID = randomUUID();
  * Derive a deterministic session ID from the host tool or terminal environment.
  *
  * Priority: host-provided session_id → NUDGE_SESSION_ID →
+ * host-AI stable env (Claude Code / Codex) →
  * per-parent session file → terminal session env →
  * per-parent persisted CLI session → process-stable random UUID.
  *
- * MCP server calls usually have no host input, so they read from the per-parent
- * session file when available. Plain CLI calls persist a generated session ID
- * by parent PID so commands from the same terminal shell group together.
+ * Host AI tools (Claude Code, Codex) spawn a fresh shell per Bash invocation,
+ * so process.ppid differs every call. Those hosts expose a per-session UUID in
+ * the environment (CLAUDE_CODE_SESSION_ID / CODEX_COMPANION_SESSION_ID) that
+ * stays stable for the lifetime of the session — prefer it over the per-ppid
+ * fallback so all CLI calls in one host session share one session ID.
  *
  * @param {string} [hostSessionId] - session_id from host input
  * @returns {string}
@@ -145,6 +148,13 @@ export function getSessionId(hostSessionId) {
   }
   if (process.env.NUDGE_SESSION_ID) {
     return process.env.NUDGE_SESSION_ID;
+  }
+  // Claude Code / Codex expose a stable per-session UUID across spawned shells.
+  if (process.env.CLAUDE_CODE_SESSION_ID) {
+    return process.env.CLAUDE_CODE_SESSION_ID;
+  }
+  if (process.env.CODEX_COMPANION_SESSION_ID) {
+    return process.env.CODEX_COMPANION_SESSION_ID;
   }
   // MCP server: read from per-parent file when an integration writes one.
   try {
@@ -170,5 +180,5 @@ export function getSessionId(hostSessionId) {
 // --- MCP protocol ---
 
 export const SERVER_NAME = 'nudge-mcp';
-export const SERVER_VERSION = '1.0.1';
+export const SERVER_VERSION = '1.0.2';
 export const PROTOCOL_VERSION = '2024-11-05';

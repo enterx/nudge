@@ -42,6 +42,8 @@ function makeEnv(configDir, extra = {}) {
   if (!('NUDGE_SESSION_ID' in extra)) delete env.NUDGE_SESSION_ID;
   if (!('TERM_SESSION_ID' in extra)) delete env.TERM_SESSION_ID;
   if (!('CLAUDE_CODE_SSE_PORT' in extra)) delete env.CLAUDE_CODE_SSE_PORT;
+  if (!('CLAUDE_CODE_SESSION_ID' in extra)) delete env.CLAUDE_CODE_SESSION_ID;
+  if (!('CODEX_COMPANION_SESSION_ID' in extra)) delete env.CODEX_COMPANION_SESSION_ID;
   return env;
 }
 
@@ -114,6 +116,52 @@ await test('plain CLI calls from the same parent shell reuse a persisted session
     const second = runGetSessionId(dir);
     assert.match(first.id, UUID_PATTERN);
     assert.equal(second.id, first.id);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test('CLAUDE_CODE_SESSION_ID groups all shells in one Claude Code session', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nudge-session-test-'));
+  try {
+    const script =
+      `import { getSessionId } from ${JSON.stringify(CONSTANTS_URL)};` +
+      'process.stdout.write(getSessionId());';
+    const runViaShell = () => {
+      const result = spawnSync('/bin/sh', ['-c', `${process.execPath} --input-type=module -e ${JSON.stringify(script)}; :`], {
+        env: makeEnv(dir, { CLAUDE_CODE_SESSION_ID: 'fixed-host-session' }),
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout;
+    };
+    const first = runViaShell();
+    const second = runViaShell();
+    assert.equal(first, 'fixed-host-session');
+    assert.equal(second, first);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test('CODEX_COMPANION_SESSION_ID groups all shells in one Codex session', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nudge-session-test-'));
+  try {
+    const result = runGetSessionId(dir, { CODEX_COMPANION_SESSION_ID: 'codex-fixed' });
+    assert.equal(result.id, 'codex-fixed');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test('NUDGE_SESSION_ID overrides CLAUDE_CODE_SESSION_ID', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nudge-session-test-'));
+  try {
+    const result = runGetSessionId(dir, {
+      NUDGE_SESSION_ID: 'manual-override',
+      CLAUDE_CODE_SESSION_ID: 'claude-host-id',
+    });
+    assert.equal(result.id, 'manual-override');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
