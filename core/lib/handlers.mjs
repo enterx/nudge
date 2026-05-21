@@ -108,11 +108,14 @@ function validateChoiceList(list, kind) {
  * `runAskUser` and `runApprove`. Persists a pending file, hooks up
  * the cancel closure (which also clears the pending file), and ensures
  * the pending file is removed once the decision arrives or the caller
- * aborts. Returns the raw decision payload from the SSE stream.
+ * aborts. When `ttlMs` is set and the SSE wait surfaces a synthetic
+ * timeout decision, also best-effort cancels the mobile event so the
+ * pending card doesn't linger after the CLI exits.
+ * Returns the raw decision payload from the SSE stream.
  */
 async function trackAndAwait({
   sessionId, createResp, apiUrl, token, pattern, toolName,
-  toolInput, sessionName, hooks,
+  toolInput, sessionName, hooks, ttlMs,
 }) {
   const eventId = createResp.eventId;
 
@@ -131,10 +134,25 @@ async function trackAndAwait({
   });
 
   try {
-    return await waitForDecision(createResp.rtdbStreamUrl, token);
+    const decision = await waitForDecision(createResp.rtdbStreamUrl, token, { timeoutMs: ttlMs });
+    if (decision.action === 'timeout') {
+      // Layer 1 cleanup: the backend doesn't (yet) auto-cancel on TTL, so we
+      // best-effort tell it now. Idempotent with any future backend-side TTL.
+      await cancelEventOnBackend(apiUrl, eventId, token, 'TTL elapsed');
+    }
+    return decision;
   } finally {
     clearPending(sessionId, eventId);
   }
+}
+
+function validateTtl(ttl) {
+  if (ttl === undefined || ttl === null) return undefined;
+  const n = Number(ttl);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error('ttl must be a positive number of seconds');
+  }
+  return Math.floor(n * 1000);
 }
 
 // --- runAskUser ---
@@ -148,8 +166,10 @@ export async function runAskUser(args, hooks = {}) {
     textOnly = false,
     context,
     structured,
+    ttl,
     sessionName: argSessionName,
   } = args;
+  const ttlMs = validateTtl(ttl);
 
   const sessionName = argSessionName || getSessionNameLazy();
   if (argSessionName) persistSessionName(argSessionName);
@@ -194,6 +214,7 @@ export async function runAskUser(args, hooks = {}) {
       multiSelect,
       ...(textOnly && { textOnly: true }),
       ...(actions.length > 0 && { actions }),
+      ...(ttl !== undefined && { ttl }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -218,7 +239,7 @@ export async function runAskUser(args, hooks = {}) {
     );
   }
 
-  // `decision.action` is the overall outcome (approved/denied/answered/cancelled).
+  // `decision.action` is the overall outcome (approved/denied/answered/cancelled/timeout).
   // `decision.selectedAction` (forward-looking, mobile to implement) carries the
   // user's choice when they tap one of the follow-up `--action` buttons.
   const decision = await trackAndAwait({
@@ -229,11 +250,13 @@ export async function runAskUser(args, hooks = {}) {
     toolInput: { question, options, multiSelect },
     sessionName,
     hooks,
+    ttlMs,
   });
 
   return {
     selectedOptions: decision.selectedOptions || [],
     freeText: decision.reason || '',
+    ...(decision.action === 'timeout' && { timedOut: true }),
     ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
   };
 }
@@ -249,8 +272,10 @@ export async function runApprove(args, hooks = {}) {
     cwd,
     actions = [],
     structured,
+    ttl,
     sessionName: argSessionName,
   } = args;
+  const ttlMs = validateTtl(ttl);
 
   const sessionName = argSessionName || getSessionNameLazy();
   if (argSessionName) persistSessionName(argSessionName);
@@ -294,6 +319,7 @@ export async function runApprove(args, hooks = {}) {
       sessionId: getSessionIdLazy(),
       ...(sessionName && { sessionName }),
       ...(actions.length > 0 && { actions }),
+      ...(ttl !== undefined && { ttl }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -326,11 +352,13 @@ export async function runApprove(args, hooks = {}) {
     toolInput: argToolInput || { description },
     sessionName,
     hooks,
+    ttlMs,
   });
 
   return {
     approved: decision.action === 'approved',
     reason: decision.reason || '',
+    ...(decision.action === 'timeout' && { timedOut: true }),
     ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
   };
 }

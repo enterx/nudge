@@ -189,6 +189,39 @@ await test('mode help shows deprecation notice', async () => {
   assert.match(stdout, /DEPRECATED/);
 });
 
+// --- --ttl client-side timeout ---
+
+await test('--ttl with non-positive number exits 2', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '--text', '--ttl', '0']);
+  assert.equal(code, 2);
+  assert.match(stderr, /--ttl must be a positive number/);
+});
+
+await test('--ttl with non-numeric value exits 2', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '--text', '--ttl', 'abc']);
+  assert.equal(code, 2);
+  assert.match(stderr, /--ttl must be a positive number/);
+});
+
+await test('--ttl accepts a positive integer (parser past validation)', async () => {
+  // Unpaired path — proves --ttl was accepted at parse time.
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '--text', '--ttl', '30'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('approve --ttl accepted', async () => {
+  const { code, stderr } = await runCli(
+    ['approve', 'Deploy?', '--ttl', '60'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
 // --- richer ask: --text / --action / structured context ---
 
 await test('ask --text alone is enough (no -o required)', async () => {

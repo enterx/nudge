@@ -191,6 +191,30 @@ describe('waitForDecision', () => {
     }
   });
 
+  it('returns synthetic timeout decision when timeoutMs elapses', async () => {
+    // Configure a server that holds the SSE connection open without sending
+    // any usable payload — just nulls — so waitForDecision keeps waiting.
+    server.configure({
+      sseMessages: [
+        { path: '/', data: null },
+        { path: '/', data: null },
+      ],
+      sseDelayMs: 20,
+      sseCloseAfterSend: false,
+    });
+
+    const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+
+    const start = Date.now();
+    const result = await waitForDecision(server.sseUrl, 'test-token', { timeoutMs: 150 });
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.action, 'timeout');
+    assert.match(result.reason, /ttl elapsed/);
+    // Generous upper bound — should be well under 1s even on slow CI.
+    assert.ok(elapsed < 1000, `timeout took too long: ${elapsed}ms`);
+  });
+
   it('throws after max reconnect attempts on repeated HTTP errors', async () => {
     const errorServer = new MockServer({
       eventsCreateStatus: 500,

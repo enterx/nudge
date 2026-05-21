@@ -16,6 +16,7 @@
  *   3   not paired
  *   4   network / server error
  *   5   validation / handler error
+ *   6   timed out waiting for a decision (--ttl)
  *   130 cancelled (SIGINT)
  */
 
@@ -118,6 +119,15 @@ function optionString(args, key) {
   return value;
 }
 
+function parseTtl(args) {
+  if (args.ttl === undefined) return undefined;
+  const n = Number(args.ttl);
+  if (!Number.isFinite(n) || n <= 0) {
+    usageError(`--ttl must be a positive number of seconds (got "${args.ttl}")`);
+  }
+  return n;
+}
+
 // Structured-context flags shared by ask/approve/notify.
 // Returns an object suitable for embedding inside the encrypted payload,
 // or undefined when no flag was passed.
@@ -184,6 +194,7 @@ const EXIT_TO_ERROR_CODE = {
   3: 'NOT_PAIRED',
   4: 'NETWORK',
   5: 'VALIDATION',
+  6: 'TIMEOUT',
   130: 'CANCELLED',
 };
 
@@ -309,20 +320,24 @@ const HELP_BY_CMD = {
   ask:
     'Usage: nudge ask <question> -o value:label [-o ...] [--multi]\n' +
     '                  [--text] [--action key:label[:desc]] [...]\n' +
+    '                  [--ttl <seconds>]\n' +
     '                  [--context C] [--diff <path>] [--files a,b,c]\n' +
     '                  [--exit-code N] [--tool-name S] [--json]\n' +
     '  Send a question, wait for the user to answer on their phone.\n' +
     '  Provide curated options via -o, free-form input via --text, follow-up\n' +
     '  actions via --action, or any combination. At least one of those three\n' +
     '  must be present.\n' +
+    '  With --ttl, exit 6 if no decision arrives within <seconds>.\n' +
     '  Default output: one selected value per line, then a blank line, then\n' +
     '  free-text reply, then "action: <key>" when a follow-up action was picked.\n' +
-    '  With --json: { selectedOptions, freeText, selectedAction? }.',
+    '  With --json: { selectedOptions, freeText, selectedAction?, timedOut? }.',
   approve:
-    'Usage: nudge approve <description> [--context C] [--action key:label[:desc]] [...]\n' +
+    'Usage: nudge approve <description> [--ttl <seconds>] [--context C]\n' +
+    '                       [--action key:label[:desc]] [...]\n' +
     '                       [--diff <path>] [--files a,b,c] [--exit-code N] [--tool-name S] [--json]\n' +
     '  Send an approval request. Exit 0 if approved, 1 if denied or if the user\n' +
-    '  picks a follow-up --action (so `approve && deploy` stays safe).',
+    '  picks a follow-up --action (so `approve && deploy` stays safe).\n' +
+    '  With --ttl, exit 6 if no decision arrives within <seconds>.',
   cancel:
     'Usage: nudge cancel <event-id>\n' +
     '       nudge cancel --session <name>\n' +
@@ -422,6 +437,7 @@ async function cmdAsk(args) {
 
   const session = optionString(args, 'session');
   const structured = parseStructured(args);
+  const ttl = parseTtl(args);
 
   const payload = {
     question,
@@ -431,6 +447,7 @@ async function cmdAsk(args) {
     ...(textOnly && { textOnly: true }),
     ...(args.context && { context: args.context }),
     ...(structured && { structured }),
+    ...(ttl !== undefined && { ttl }),
     ...(session && { sessionName: session }),
   };
 
@@ -438,6 +455,11 @@ async function cmdAsk(args) {
     onEventCreated: installCancel,
   });
   clearCancel();
+
+  if (result.timedOut) {
+    printResult(result, ['(timed out waiting for an answer)']);
+    process.exit(6);
+  }
 
   const lines = [];
   for (const opt of result.selectedOptions || []) lines.push(opt);
@@ -469,11 +491,13 @@ async function cmdApprove(args) {
 
   const actions = args.actions.map(parseOption);
   const structured = parseStructured(args);
+  const ttl = parseTtl(args);
 
   const payload = {
     description,
     ...(actions.length > 0 && { actions }),
     ...(structured && { structured }),
+    ...(ttl !== undefined && { ttl }),
     ...(args.context && { context: args.context }),
     ...(args.session && { sessionName: args.session }),
   };
@@ -482,6 +506,11 @@ async function cmdApprove(args) {
     onEventCreated: installCancel,
   });
   clearCancel();
+
+  if (result.timedOut) {
+    printResult(result, ['(timed out waiting for approval)']);
+    process.exit(6);
+  }
 
   const lines = [
     result.approved ? 'Approved.' : (result.selectedAction ? `Action: ${result.selectedAction}` : 'Denied.'),

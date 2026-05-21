@@ -111,6 +111,7 @@ Default output: one selected value per line, then a blank line, then the free-te
 | `--multi` | Allow multiple `-o` selections |
 | `--text` | Allow free-form text input (no `-o` required) |
 | `--action key:label[:description]` *(repeatable)* | Follow-up action button (e.g. "Run /verify first"). The user's pick comes back as `selectedAction`. |
+| `--ttl <seconds>` | Give up waiting after N seconds. Exit `6` (TIMEOUT). The mobile event is best-effort cancelled. |
 | `--context C` | Free-form context shown on mobile |
 | `--diff <path>` | Attach a diff (file contents inlined into the encrypted payload) |
 | `--files a,b,c` | Comma-separated list of affected files |
@@ -126,8 +127,9 @@ Send an approval request. **Exits 0 on approve, 1 on deny or follow-up action** 
 |--------|-------------|
 | `--context C` | Free-form context shown on mobile |
 | `--action key:label[:description]` *(repeatable)* | Follow-up action button (e.g. "Show diff first"). |
+| `--ttl <seconds>` | Give up waiting after N seconds. Exit `6` (TIMEOUT). |
 | `--diff <path>` / `--files a,b,c` / `--exit-code N` / `--tool-name S` | Structured context (same semantics as `ask`) |
-| `--json` | Emit `{ approved, reason, selectedAction? }` to stdout |
+| `--json` | Emit `{ approved, reason, selectedAction?, timedOut? }` to stdout |
 
 ### `nudge cancel <event-id|--last|--all|--session name>`
 
@@ -173,6 +175,7 @@ nudge cancel --session "Auth refactor"
 | `3` | Not paired (run `nudge pair`) |
 | `4` | Network / server error |
 | `5` | Validation error |
+| `6` | Timed out (`--ttl` elapsed before a decision arrived) |
 | `130` | Cancelled by SIGINT (best-effort cancels the pending mobile event) |
 
 ## Recipes
@@ -193,6 +196,9 @@ ENV=$(nudge ask "Where should we ship?" -o staging:Staging -o prod:Prod --json |
 
 # Cancel a stuck approval from any process
 nudge cancel --last
+
+# Time-bound approval so a forgotten phone doesn't block CI forever
+nudge approve "Deploy?" --ttl 600 || handle_timeout_or_deny
 ```
 
 ## Configuration
