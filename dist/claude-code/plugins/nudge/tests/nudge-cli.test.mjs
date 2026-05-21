@@ -161,6 +161,147 @@ await test('mode help shows deprecation notice', async () => {
   assert.match(stdout, /DEPRECATED/);
 });
 
+// --- cancel ---
+
+await test('cancel without selector exits 2', async () => {
+  const { code, stderr } = await runCli(['cancel']);
+  assert.equal(code, 2);
+  assert.match(stderr, /requires exactly one selector/);
+});
+
+await test('cancel with two selectors exits 2', async () => {
+  const { code, stderr } = await runCli(['cancel', '--last', '--all']);
+  assert.equal(code, 2);
+  assert.match(stderr, /mutually exclusive/);
+});
+
+await test('cancel --all with empty pending dir exits 0 (no-op)', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  try {
+    const { code, stdout } = await runCli(['cancel', '--all'], { HOME: homeDir });
+    assert.equal(code, 0);
+    assert.match(stdout, /No pending events/);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel --last with empty pending dir exits 0', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  try {
+    const { code } = await runCli(['cancel', '--last'], { HOME: homeDir });
+    assert.equal(code, 0);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel <unknown-id> exits 5 with not-found error', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  try {
+    const { code, stderr } = await runCli(['cancel', 'evt-missing'], { HOME: homeDir });
+    assert.equal(code, 5);
+    assert.match(stderr, /No pending event found.*evt-missing/);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel --session <unknown> exits 5', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  try {
+    const { code, stderr } = await runCli(['cancel', '--session', 'No-Such'], { HOME: homeDir });
+    assert.equal(code, 5);
+    assert.match(stderr, /No pending events found for session "No-Such"/);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel <event-id> resolves a real pending file, removes it, exits 0', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  // Mirror the layout pending-files.mjs uses.
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  const pendingPath = join(nudgeDir, 'pending-sess-A-evt-XYZ.json');
+  writeFileSync(pendingPath, JSON.stringify({
+    eventId: 'evt-XYZ',
+    sessionId: 'sess-A',
+    sessionName: 'Deploy v1.2',
+    apiUrl: 'http://127.0.0.1:1',  // unreachable — postCancel swallows error
+    token: 'fake-token',
+    pattern: 'approval',
+    toolName: 'Bash',
+    createdAt: Date.now(),
+  }), { mode: 0o600 });
+
+  try {
+    const { code, stdout } = await runCli(['cancel', 'evt-XYZ', '--json'], { HOME: homeDir });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(stdout.trim());
+    assert.equal(parsed.cancelled, 1);
+    assert.equal(parsed.events[0].eventId, 'evt-XYZ');
+    assert.equal(parsed.events[0].sessionName, 'Deploy v1.2');
+    assert.equal(existsSync(pendingPath), false);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel --all removes every pending file', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  for (const evt of ['a', 'b', 'c']) {
+    writeFileSync(join(nudgeDir, `pending-sess-${evt}-evt-${evt}.json`), JSON.stringify({
+      eventId: `evt-${evt}`,
+      sessionId: `sess-${evt}`,
+      apiUrl: 'http://127.0.0.1:1',
+      token: 't',
+      pattern: 'approval',
+      createdAt: Date.now() + evt.charCodeAt(0),
+    }), { mode: 0o600 });
+  }
+
+  try {
+    const { code, stdout } = await runCli(['cancel', '--all', '--json'], { HOME: homeDir });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(stdout.trim());
+    assert.equal(parsed.cancelled, 3);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+await test('cancel --last picks the newest by createdAt', async () => {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  writeFileSync(join(nudgeDir, 'pending-s-evt-old.json'), JSON.stringify({
+    eventId: 'evt-old', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
+    pattern: 'approval', createdAt: 1,
+  }), { mode: 0o600 });
+  writeFileSync(join(nudgeDir, 'pending-s-evt-new.json'), JSON.stringify({
+    eventId: 'evt-new', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
+    pattern: 'approval', createdAt: 9999999,
+  }), { mode: 0o600 });
+
+  try {
+    const { code, stdout } = await runCli(['cancel', '--last', '--json'], { HOME: homeDir });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(stdout.trim());
+    assert.equal(parsed.cancelled, 1);
+    assert.equal(parsed.events[0].eventId, 'evt-new');
+    // The older one should still be on disk
+    assert.equal(existsSync(join(nudgeDir, 'pending-s-evt-old.json')), true);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 await test('approve ignores legacy hidden flags with a warning', async () => {
   const { code, stderr } = await runCli(
     ['approve', 'deploy', '--input', '{"x":1}', '--tool', 'Bash'],
