@@ -82,7 +82,7 @@ Prints pairing state, server connectivity, auth token validity, current ask mode
 
 ### `nudge mode <nudge|terminal> [--json]` *(deprecated)*
 
-Deprecated alias for `nudge status --mode <target>`. Prints a deprecation warning and forwards to `status`. Will be removed in v1.2.
+Deprecated alias for `nudge status --mode <target>`. Prints a deprecation warning and forwards to `status`. Will be removed in v1.3.
 
 ### `nudge notify <body> [options]`
 
