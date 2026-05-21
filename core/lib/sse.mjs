@@ -16,18 +16,34 @@ import { SSE_MAX_TIME_MS, SSE_MAX_RECONNECTS } from './constants.mjs';
  *
  * @param {string} rtdbStreamUrl - Firebase RTDB REST streaming URL
  * @param {string} token         - Firebase auth token
+ * @param {object} [options]
+ * @param {number} [options.timeoutMs] - Overall TTL across reconnects. When set
+ *   and elapsed, returns a synthetic `{ action: 'timeout', reason: 'ttl elapsed' }`
+ *   decision instead of throwing. Callers can branch on `decision.action`.
  * @returns {Promise<object>} Raw response payload (e.g. { action, reason, ... })
  */
-export async function waitForDecision(rtdbStreamUrl, token) {
+export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
   if (!rtdbStreamUrl) {
     throw new Error('No RTDB stream URL returned from server');
   }
 
+  const { timeoutMs } = options;
+  const ttlDeadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  const ttlExpired = () => ttlDeadline !== null && Date.now() >= ttlDeadline;
+
   let consecutiveFailures = 0;
 
   while (consecutiveFailures < SSE_MAX_RECONNECTS) {
+    if (ttlExpired()) {
+      return { action: 'timeout', reason: 'ttl elapsed' };
+    }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), SSE_MAX_TIME_MS);
+    // Bound the per-attempt timer by whatever's left on the overall TTL, so a
+    // short --ttl doesn't get held open by the Cloud Functions 540s ceiling.
+    const attemptMs = ttlDeadline
+      ? Math.max(0, Math.min(SSE_MAX_TIME_MS, ttlDeadline - Date.now()))
+      : SSE_MAX_TIME_MS;
+    const timeout = setTimeout(() => controller.abort(), attemptMs);
 
     try {
       const separator = rtdbStreamUrl.includes('?') ? '&' : '?';
@@ -91,7 +107,10 @@ export async function waitForDecision(rtdbStreamUrl, token) {
     } catch (err) {
       clearTimeout(timeout);
       if (err.name === 'AbortError') {
-        // Timeout — reconnect silently
+        // Could be either: per-attempt timeout (just reconnect) or overall TTL.
+        if (ttlExpired()) {
+          return { action: 'timeout', reason: 'ttl elapsed' };
+        }
       } else {
         consecutiveFailures++;
         if (consecutiveFailures >= SSE_MAX_RECONNECTS) {
