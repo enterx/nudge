@@ -58,6 +58,34 @@ function runCli(args, env = {}) {
 const NO_CONFIG_PATH = join(tmpdir(), `nudge-cli-test-${process.pid}-no-config`);
 const ENV_UNPAIRED = { NUDGE_CONFIG_PATH: NO_CONFIG_PATH };
 
+// --- Pending-file test fixture ----------------------------------------------
+//
+// Most `nudge cancel` tests want an isolated `~/.nudge` with one or more
+// pending-*.json fixtures. This helper creates a tempdir HOME, populates it,
+// and returns the path so the caller can set `HOME` in the child env.
+// `apiUrl` defaults to an unreachable address — `postCancel` silently swallows
+// the resulting network error, which is what we want here (we only care that
+// the local pending file gets resolved/removed).
+
+import { mkdirSync } from 'node:fs';
+
+function setupPendingHome(items) {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  for (const item of items) {
+    const filename = `pending-${item.sessionId}-${item.eventId}.json`;
+    writeFileSync(join(nudgeDir, filename), JSON.stringify({
+      apiUrl: 'http://127.0.0.1:1',
+      token: 'fake-token',
+      pattern: 'approval',
+      createdAt: Date.now(),
+      ...item,
+    }), { mode: 0o600 });
+  }
+  return { homeDir, nudgeDir };
+}
+
 console.log('\nNudge CLI tests\n');
 
 await test('--help prints usage and exits 0', async () => {
@@ -96,7 +124,7 @@ await test('approve without description exits 2', async () => {
 await test('ask without options exits 2', async () => {
   const { code, stderr } = await runCli(['ask', 'test?']);
   assert.equal(code, 2);
-  assert.match(stderr, /at least 2 options/);
+  assert.match(stderr, /requires options.*--text.*--action/);
 });
 
 await test('ask without question exits 2', async () => {
@@ -161,6 +189,87 @@ await test('mode help shows deprecation notice', async () => {
   assert.match(stdout, /DEPRECATED/);
 });
 
+// --- richer ask: --text / --action / structured context ---
+
+await test('ask --text alone is enough (no -o required)', async () => {
+  // Unpaired → exits 3 from handler. If parser still rejected, we'd see exit 2.
+  const { code, stderr } = await runCli(
+    ['ask', 'What should we name this?', '--text'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('ask --action alone is enough (no -o required)', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '--action', 'verify:Run /verify'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('ask --action with bad spec exits 2', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '--action', 'novalue']);
+  assert.equal(code, 2);
+  assert.match(stderr, /value:label/i);
+});
+
+await test('ask with single -o still rejected (must be 2-4)', async () => {
+  const { code, stderr } = await runCli(['ask', 'q?', '-o', 'a:A']);
+  assert.equal(code, 2);
+  assert.match(stderr, /at least 2 options/);
+});
+
+await test('ask -o + --action coexist (no required option-count error)', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '-o', 'yes:Yes', '-o', 'no:No', '--action', 'diff:"Show diff"'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('approve accepts --action', async () => {
+  const { code, stderr } = await runCli(
+    ['approve', 'Deploy?', '--action', 'verify:Run /verify first'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
+await test('--exit-code non-numeric exits 2', async () => {
+  const { code, stderr } = await runCli(
+    ['notify', 'Build', 'done', '--exit-code', 'abc'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /--exit-code must be a number/);
+});
+
+await test('--diff with missing file exits 2 with helpful message', async () => {
+  const { code, stderr } = await runCli(
+    ['ask', 'q?', '--text', '--diff', '/does/not/exist.diff'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /--diff: cannot read/);
+});
+
+await test('--files comma-split, --tool-name, --exit-code reach the handler (validated past parse)', async () => {
+  // Combining all structured flags. Parsing should succeed; we exit at the
+  // not-paired stage. Failure earlier in parse would surface here.
+  const { code, stderr } = await runCli(
+    ['notify', 'Build', 'failed',
+     '--files', 'src/a.go,src/b.go',
+     '--exit-code', '2',
+     '--tool-name', 'go test'],
+    ENV_UNPAIRED,
+  );
+  assert.equal(code, 3);
+  assert.match(stderr, /not configured|re-pair|not paired/i);
+});
+
 // --- cancel ---
 
 await test('cancel without selector exits 2', async () => {
@@ -219,23 +328,10 @@ await test('cancel --session <unknown> exits 5', async () => {
 });
 
 await test('cancel <event-id> resolves a real pending file, removes it, exits 0', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  // Mirror the layout pending-files.mjs uses.
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
+  const { homeDir, nudgeDir } = setupPendingHome([
+    { eventId: 'evt-XYZ', sessionId: 'sess-A', sessionName: 'Deploy v1.2', toolName: 'Bash' },
+  ]);
   const pendingPath = join(nudgeDir, 'pending-sess-A-evt-XYZ.json');
-  writeFileSync(pendingPath, JSON.stringify({
-    eventId: 'evt-XYZ',
-    sessionId: 'sess-A',
-    sessionName: 'Deploy v1.2',
-    apiUrl: 'http://127.0.0.1:1',  // unreachable — postCancel swallows error
-    token: 'fake-token',
-    pattern: 'approval',
-    toolName: 'Bash',
-    createdAt: Date.now(),
-  }), { mode: 0o600 });
-
   try {
     const { code, stdout } = await runCli(['cancel', 'evt-XYZ', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
@@ -250,21 +346,11 @@ await test('cancel <event-id> resolves a real pending file, removes it, exits 0'
 });
 
 await test('cancel --all removes every pending file', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
-  for (const evt of ['a', 'b', 'c']) {
-    writeFileSync(join(nudgeDir, `pending-sess-${evt}-evt-${evt}.json`), JSON.stringify({
-      eventId: `evt-${evt}`,
-      sessionId: `sess-${evt}`,
-      apiUrl: 'http://127.0.0.1:1',
-      token: 't',
-      pattern: 'approval',
-      createdAt: Date.now() + evt.charCodeAt(0),
-    }), { mode: 0o600 });
-  }
-
+  const { homeDir } = setupPendingHome(
+    ['a', 'b', 'c'].map((s) => ({
+      eventId: `evt-${s}`, sessionId: `sess-${s}`, createdAt: Date.now() + s.charCodeAt(0),
+    })),
+  );
   try {
     const { code, stdout } = await runCli(['cancel', '--all', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
@@ -276,19 +362,10 @@ await test('cancel --all removes every pending file', async () => {
 });
 
 await test('cancel --last picks the newest by createdAt', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
-  writeFileSync(join(nudgeDir, 'pending-s-evt-old.json'), JSON.stringify({
-    eventId: 'evt-old', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
-    pattern: 'approval', createdAt: 1,
-  }), { mode: 0o600 });
-  writeFileSync(join(nudgeDir, 'pending-s-evt-new.json'), JSON.stringify({
-    eventId: 'evt-new', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
-    pattern: 'approval', createdAt: 9999999,
-  }), { mode: 0o600 });
-
+  const { homeDir, nudgeDir } = setupPendingHome([
+    { eventId: 'evt-old', sessionId: 's', createdAt: 1 },
+    { eventId: 'evt-new', sessionId: 's', createdAt: 9999999 },
+  ]);
   try {
     const { code, stdout } = await runCli(['cancel', '--last', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
@@ -364,7 +441,7 @@ await test('v2 envelope: usage error on --json emits ok:false USAGE on stdout', 
   const parsed = JSON.parse(stdout.trim());
   assert.equal(parsed.ok, false);
   assert.equal(parsed.error.code, 'USAGE');
-  assert.match(parsed.error.message, /at least 2 options/);
+  assert.match(parsed.error.message, /requires options.*--text.*--action/);
 });
 
 await test('v2 envelope: default mode (no env) still emits v1 shape', async () => {

@@ -87,14 +87,67 @@ function notifyCreated(hooks, ctx) {
   try { hooks?.onEventCreated?.(ctx); } catch { /* ignore */ }
 }
 
+/**
+ * Shared validator for `-o` / `--action` style choice arrays. Caller passes
+ * a human-readable singular noun (`option`, `action`) so the error message
+ * stays accurate. Throws on bad shape; returns nothing on success.
+ */
+function validateChoiceList(list, kind) {
+  if (!Array.isArray(list)) {
+    throw new Error(`${kind}s must be an array`);
+  }
+  for (const item of list) {
+    if (!item.value || !item.label) {
+      throw new Error(`Each ${kind} must have "value" and "label"`);
+    }
+  }
+}
+
+/**
+ * Cross-cutting lifecycle for `eventsCreate` → SSE wait paths used by
+ * `runAskUser` and `runApprove`. Persists a pending file, hooks up
+ * the cancel closure (which also clears the pending file), and ensures
+ * the pending file is removed once the decision arrives or the caller
+ * aborts. Returns the raw decision payload from the SSE stream.
+ */
+async function trackAndAwait({
+  sessionId, createResp, apiUrl, token, pattern, toolName,
+  toolInput, sessionName, hooks,
+}) {
+  const eventId = createResp.eventId;
+
+  writePending(sessionId, eventId, {
+    apiUrl, token, pattern, toolName, toolInput, sessionName,
+  });
+
+  notifyCreated(hooks, {
+    eventId,
+    apiUrl,
+    token,
+    cancel: () => {
+      clearPending(sessionId, eventId);
+      return cancelEventOnBackend(apiUrl, eventId, token);
+    },
+  });
+
+  try {
+    return await waitForDecision(createResp.rtdbStreamUrl, token);
+  } finally {
+    clearPending(sessionId, eventId);
+  }
+}
+
 // --- runAskUser ---
 
 export async function runAskUser(args, hooks = {}) {
   const {
     question,
-    options,
+    options = [],
+    actions = [],
     multiSelect = false,
+    textOnly = false,
     context,
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -107,21 +160,23 @@ export async function runAskUser(args, hooks = {}) {
   validateStringLength(question, 'question');
   validateStringLength(context, 'context');
   validateStringLength(sessionName, 'sessionName');
-  if (!Array.isArray(options) || options.length < 2 || options.length > 4) {
-    throw new Error('options must be an array of 2-4 items');
+
+  validateChoiceList(options, 'option');
+  validateChoiceList(actions, 'action');
+  if (!textOnly && options.length === 0 && actions.length === 0) {
+    throw new Error('ask requires options, --text, or at least one --action');
   }
-  for (const opt of options) {
-    if (!opt.value || !opt.label) {
-      throw new Error('Each option must have "value" and "label"');
-    }
+  if (options.length > 0 && (options.length < 2 || options.length > 4)) {
+    throw new Error('options must be an array of 2-4 items');
   }
 
   const { token, apiUrl } = await getAuthContext();
 
   const sensitiveFields = {
-    toolInput: { question, options, multiSelect },
+    toolInput: { question, options, multiSelect, ...(textOnly && { textOnly }), ...(actions.length > 0 && { actions }) },
     description: question,
     ...(context && { context }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -137,6 +192,8 @@ export async function runAskUser(args, hooks = {}) {
       ...(sessionName && { sessionName }),
       options,
       multiSelect,
+      ...(textOnly && { textOnly: true }),
+      ...(actions.length > 0 && { actions }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -151,11 +208,9 @@ export async function runAskUser(args, hooks = {}) {
     token,
   );
 
-  const eventId = createResp.eventId;
-  if (!eventId) {
+  if (!createResp.eventId) {
     throw new Error('Failed to create elicitation event: no eventId returned');
   }
-
   if (createResp.deviceCount === 0) {
     throw new Error(
       'No devices registered for push notifications. ' +
@@ -163,31 +218,24 @@ export async function runAskUser(args, hooks = {}) {
     );
   }
 
-  const sessionId = getSessionIdLazy();
-  writePending(sessionId, eventId, {
-    apiUrl, token, pattern: 'elicitation', toolName: 'nudge_ask_user',
-    toolInput: { question, options, multiSelect }, sessionName,
+  // `decision.action` is the overall outcome (approved/denied/answered/cancelled).
+  // `decision.selectedAction` (forward-looking, mobile to implement) carries the
+  // user's choice when they tap one of the follow-up `--action` buttons.
+  const decision = await trackAndAwait({
+    sessionId: getSessionIdLazy(),
+    createResp, apiUrl, token,
+    pattern: 'elicitation',
+    toolName: 'nudge_ask_user',
+    toolInput: { question, options, multiSelect },
+    sessionName,
+    hooks,
   });
 
-  notifyCreated(hooks, {
-    eventId,
-    apiUrl,
-    token,
-    cancel: () => {
-      clearPending(sessionId, eventId);
-      return cancelEventOnBackend(apiUrl, eventId, token);
-    },
-  });
-
-  try {
-    const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-    return {
-      selectedOptions: decision.selectedOptions || [],
-      freeText: decision.reason || '',
-    };
-  } finally {
-    clearPending(sessionId, eventId);
-  }
+  return {
+    selectedOptions: decision.selectedOptions || [],
+    freeText: decision.reason || '',
+    ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
+  };
 }
 
 // --- runApprove ---
@@ -199,6 +247,8 @@ export async function runApprove(args, hooks = {}) {
     context,
     toolInput: argToolInput,
     cwd,
+    actions = [],
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -216,14 +266,20 @@ export async function runApprove(args, hooks = {}) {
   validateStringLength(context, 'context');
   validateStringLength(sessionName, 'sessionName');
 
+  validateChoiceList(actions, 'action');
+
   const { token, apiUrl } = await getAuthContext();
   const approvalLabel = toolName === 'nudge_approve' ? 'Approval' : toolName;
 
   const sensitiveFields = {
-    toolInput: argToolInput || { description },
+    toolInput: {
+      ...(argToolInput || { description }),
+      ...(actions.length > 0 && { actions }),
+    },
     description,
     ...(context && { context }),
     ...(cwd && { cwd }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -237,6 +293,7 @@ export async function runApprove(args, hooks = {}) {
       pattern: 'approval',
       sessionId: getSessionIdLazy(),
       ...(sessionName && { sessionName }),
+      ...(actions.length > 0 && { actions }),
       ...(encrypted
         ? {
             encryptedPayload: encrypted.encryptedPayload,
@@ -251,11 +308,9 @@ export async function runApprove(args, hooks = {}) {
     token,
   );
 
-  const eventId = createResp.eventId;
-  if (!eventId) {
+  if (!createResp.eventId) {
     throw new Error('Failed to create approval event: no eventId returned');
   }
-
   if (createResp.deviceCount === 0) {
     throw new Error(
       'No devices registered for push notifications. ' +
@@ -263,31 +318,21 @@ export async function runApprove(args, hooks = {}) {
     );
   }
 
-  const sessionId = getSessionIdLazy();
-  writePending(sessionId, eventId, {
-    apiUrl, token, pattern: 'approval', toolName,
-    toolInput: argToolInput || { description }, sessionName,
+  const decision = await trackAndAwait({
+    sessionId: getSessionIdLazy(),
+    createResp, apiUrl, token,
+    pattern: 'approval',
+    toolName,
+    toolInput: argToolInput || { description },
+    sessionName,
+    hooks,
   });
 
-  notifyCreated(hooks, {
-    eventId,
-    apiUrl,
-    token,
-    cancel: () => {
-      clearPending(sessionId, eventId);
-      return cancelEventOnBackend(apiUrl, eventId, token);
-    },
-  });
-
-  try {
-    const decision = await waitForDecision(createResp.rtdbStreamUrl, token);
-    return {
-      approved: decision.action === 'approved',
-      reason: decision.reason || '',
-    };
-  } finally {
-    clearPending(sessionId, eventId);
-  }
+  return {
+    approved: decision.action === 'approved',
+    reason: decision.reason || '',
+    ...(decision.selectedAction && { selectedAction: decision.selectedAction }),
+  };
 }
 
 // --- runNotify ---
@@ -298,6 +343,7 @@ export async function runNotify(args) {
     body,
     level = 'info',
     context,
+    structured,
     sessionName: argSessionName,
   } = args;
 
@@ -326,6 +372,7 @@ export async function runNotify(args) {
     toolInput: {},
     description: body,
     ...(context && { context }),
+    ...(structured && { structured }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 

@@ -54,6 +54,28 @@ describe('encryptSensitiveFields', () => {
     assert.ok(out);
     assert.equal(typeof out.encryptedPayload, 'string');
   });
+
+  it('carries structured context fields when provided', async () => {
+    // Round-trip via a known key to assert the structured field actually
+    // makes it into the encrypted payload's inner JSON.
+    const { createDecipheriv } = await import('node:crypto');
+    const key = Buffer.from(KEY, 'base64');
+    const structured = { diff: '--- a\n+++ b', files: ['a.go'], exitCode: 1, toolName: 'go test' };
+    const out = encryptSensitiveFields(
+      { encryptionKey: KEY },
+      { toolInput: { x: 1 }, description: 'd', structured },
+    );
+    // Decrypt and parse
+    const blob = Buffer.from(out.encryptedPayload, 'base64');
+    const iv = Buffer.from(out.iv, 'base64');
+    const ciphertext = blob.subarray(0, blob.length - 16);
+    const tag = blob.subarray(blob.length - 16);
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+    const parsed = JSON.parse(plaintext);
+    assert.deepEqual(parsed.structured, structured);
+  });
 });
 
 describe('buildEventPayload', () => {
