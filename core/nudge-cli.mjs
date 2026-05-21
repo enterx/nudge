@@ -3,7 +3,9 @@
  * nudge-cli.mjs — Nudge command-line interface.
  *
  * Primary entry point. Mirrors the four MCP tools as subcommands plus
- * `pair` (delegates to nudge-pair.sh) and `mode` (alias for `status --mode`).
+ * `pair` (delegates to nudge-pair.sh).
+ *
+ * `mode` is a deprecated alias for `status --mode` and will be removed in v1.2.
  *
  * Usage: nudge <subcommand> [options]
  *
@@ -102,25 +104,75 @@ function optionString(args, key) {
 }
 
 // --- Output helpers ----------------------------------------------------------
+//
+// Two JSON envelope versions are supported:
+//   v1 (default): each command emits its own ad-hoc shape (back-compat).
+//   v2 (opt-in via NUDGE_JSON_VERSION=2):
+//     success → { ok: true,  command, data }
+//     error   → { ok: false, command, error: { code, message } }
+//
+// v2 unifies output so callers can branch on `ok` and `error.code` without
+// per-command parsing. v1 stays available until the next major bump.
 
-function isJsonMode(args) {
-  return args.flags.has('json');
+let activeArgs = null;
+
+function setActiveArgs(args) {
+  activeArgs = args;
 }
 
-function printResult(args, data, humanLines) {
-  if (isJsonMode(args)) {
-    process.stdout.write(JSON.stringify(data) + '\n');
+function jsonVersion() {
+  return process.env.NUDGE_JSON_VERSION === '2' ? 2 : 1;
+}
+
+function isJsonMode() {
+  return activeArgs?.flags?.has('json') === true;
+}
+
+function activeCommand() {
+  return activeArgs?._?.[0] || 'unknown';
+}
+
+const EXIT_TO_ERROR_CODE = {
+  1: 'ERROR',
+  2: 'USAGE',
+  3: 'NOT_PAIRED',
+  4: 'NETWORK',
+  5: 'VALIDATION',
+  130: 'CANCELLED',
+};
+
+function printResult(data, humanLines) {
+  if (isJsonMode()) {
+    const payload = jsonVersion() === 2
+      ? { ok: true, command: activeCommand(), data }
+      : data;
+    process.stdout.write(JSON.stringify(payload) + '\n');
     return;
   }
   for (const line of humanLines) process.stdout.write(line + '\n');
 }
 
-function die(code, message) {
-  process.stderr.write(`nudge: ${message}\n`);
+function die(code, message, errorCode) {
+  if (isJsonMode() && jsonVersion() === 2) {
+    const payload = {
+      ok: false,
+      command: activeCommand(),
+      error: {
+        code: errorCode || EXIT_TO_ERROR_CODE[code] || 'ERROR',
+        message,
+      },
+    };
+    process.stdout.write(JSON.stringify(payload) + '\n');
+  } else {
+    process.stderr.write(`nudge: ${message}\n`);
+  }
   process.exit(code);
 }
 
 function usageError(message) {
+  if (isJsonMode() && jsonVersion() === 2) {
+    die(2, message, 'USAGE');
+  }
   process.stderr.write(`nudge: ${message}\n`);
   process.stderr.write('Run `nudge --help` for usage.\n');
   process.exit(2);
@@ -129,13 +181,13 @@ function usageError(message) {
 function classifyAndExit(err) {
   const msg = err?.message || String(err);
   if (/not configured|re-pair|no authentication token/i.test(msg)) {
-    die(3, msg);
+    die(3, msg, 'NOT_PAIRED');
   } else if (/HTTP \d|fetch failed|ECONN|ENOTFOUND|SSE/i.test(msg)) {
-    die(4, msg);
+    die(4, msg, 'NETWORK');
   } else if (/required|must be|exceeds maximum|must have/i.test(msg)) {
-    die(5, msg);
+    die(5, msg, 'VALIDATION');
   } else {
-    die(1, msg);
+    die(1, msg, 'ERROR');
   }
 }
 
@@ -166,8 +218,7 @@ Usage:
 
 Subcommands:
   pair                          Pair your phone (generate code, scan in app)
-  status                        Show pairing + connection status
-  mode <nudge|terminal>         Switch ask mode (alias for status --mode)
+  status [--mode nudge|terminal] Show pairing + connection status, switch mode
   notify "Hello"                Fire-and-forget notification
   ask <question> -o val:label   Send a question, wait for an answer
   approve <description>         Send an approval request, exit 0/1
@@ -196,7 +247,8 @@ const HELP_BY_CMD = {
     '  Show pairing state, server connectivity, auth token validity, ask mode.',
   mode:
     'Usage: nudge mode <nudge|terminal> [--json]\n' +
-    '  Switch ask mode. `nudge` sends questions to your phone; `terminal` keeps them locally.',
+    '  DEPRECATED — use `nudge status --mode <target>` instead.\n' +
+    '  Will be removed in v1.2.',
   notify:
     'Usage: nudge notify <body>\n' +
     '       nudge notify <title> <body>\n' +
@@ -246,7 +298,7 @@ async function cmdStatus(args) {
     if (result.modeChanged) lines.push('');
     if (result.modeChanged && result.message) lines.push(result.message);
   }
-  printResult(args, result, lines);
+  printResult(result, lines);
   if (!result.paired) process.exit(3);
 }
 
@@ -256,6 +308,10 @@ async function cmdMode(args) {
   if (target !== 'nudge' && target !== 'terminal') {
     usageError(`mode must be "nudge" or "terminal" (got "${target}")`);
   }
+  process.stderr.write(
+    'nudge: `nudge mode` is deprecated and will be removed in v1.2. ' +
+    'Use `nudge status --mode <target>` instead.\n',
+  );
   return cmdStatus({ ...args, mode: target });
 }
 
@@ -277,7 +333,7 @@ async function cmdNotify(args) {
     ...(args.session && { sessionName: args.session }),
   };
   const result = await runNotify(payload);
-  printResult(args, result, ['Notification sent.']);
+  printResult(result, ['Notification sent.']);
 }
 
 async function cmdAsk(args) {
@@ -310,31 +366,26 @@ async function cmdAsk(args) {
   }
   if (lines.length === 0) lines.push('(no selection)');
 
-  printResult(args, result, lines);
+  printResult(result, lines);
 }
 
 async function cmdApprove(args) {
   const description = args._.slice(1).join(' ').trim();
   if (!description) usageError('approve requires a description argument');
-  const title = optionString(args, 'title');
-  const tool = optionString(args, 'tool');
 
-  let toolInput;
-  if (args.input) {
-    try {
-      toolInput = JSON.parse(args.input);
-    } catch (err) {
-      usageError(`--input must be valid JSON: ${err.message}`);
+  for (const flag of ['title', 'tool', 'input', 'cwd']) {
+    if (args[flag] !== undefined) {
+      process.stderr.write(
+        `nudge: --${flag} on \`approve\` is no longer supported on the CLI ` +
+        `(it was undocumented and reserved for MCP); ignoring.\n`,
+      );
     }
   }
 
   const payload = {
     description,
-    ...((title || tool) && { toolName: title || tool }),
-    ...(args.cwd && { cwd: args.cwd }),
     ...(args.context && { context: args.context }),
     ...(args.session && { sessionName: args.session }),
-    ...(toolInput && { toolInput }),
   };
 
   const result = await runApprove(payload, {
@@ -346,7 +397,9 @@ async function cmdApprove(args) {
     result.approved ? 'Approved.' : 'Denied.',
     ...(result.reason ? [result.reason] : []),
   ];
-  printResult(args, result, lines);
+  // In v2 JSON mode, "denied" is still a successful operation (the user
+  // exercised choice). The exit code carries the decision, not the envelope.
+  printResult(result, lines);
 
   process.exit(result.approved ? 0 : 1);
 }
@@ -365,6 +418,7 @@ const COMMANDS = {
 async function main() {
   const argv = process.argv.slice(2);
   const args = parseArgs(argv);
+  setActiveArgs(args);
 
   if (args.flags.has('version')) {
     process.stdout.write(`nudge ${SERVER_VERSION}\n`);

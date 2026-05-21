@@ -31,6 +31,14 @@ echo "--- hook.test.mjs ---"
 node tests/hook.test.mjs
 
 echo ""
+echo "--- pending-files.test.mjs ---"
+node tests/pending-files.test.mjs
+
+echo ""
+echo "--- hook-runtime.test.mjs ---"
+node tests/hook-runtime.test.mjs
+
+echo ""
 echo "--- sse.test.mjs ---"
 node tests/sse.test.mjs
 

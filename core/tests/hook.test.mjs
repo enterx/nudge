@@ -122,7 +122,7 @@ describe('shouldSkip', () => {
       true,
     );
     assert.equal(
-      shouldSkip('Bash', { command: '/usr/local/bin/node /path/nudge-activity.mjs' }),
+      shouldSkip('Bash', { command: '/usr/local/bin/node /path/nudge-cli.mjs' }),
       true,
     );
   });
