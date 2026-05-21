@@ -5,6 +5,31 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-21
+
+Minor release rolling up the cleanup pass and the feature additions that landed between 1.0.2 and now. CLI-side only — no backend or mobile-app changes required for any of this to be usable (richer features light up incrementally as mobile/backend catch up).
+
+### Added
+
+- **`nudge cancel`** — stop in-flight mobile events from another process: `nudge cancel <event-id>` / `--session <name>` / `--last` / `--all`. Useful in CI cleanup traps, supervisor scripts, or when handling an approval from a different terminal than the one that started it. Backend-agnostic — uses the existing `/eventsRespond/:id/respond` endpoint.
+- **`--ttl <seconds>`** on `ask`/`approve` — give up waiting after N seconds. Exit code **6** (TIMEOUT). The mobile event is best-effort cancelled so the pending card dismisses. Server-side TTL enforcement (auto-cancel of expired events) lands in a future backend release; the CLI carries `ttl` on the `eventsCreate` payload so that path activates automatically when ready.
+- **`--text`** on `nudge ask` — accept free-form text answers without requiring 2–4 curated options. The payload signals `textOnly: true` so mobile can render a text input UI when it picks the field up.
+- **`--action key:label[:description]`** on `nudge ask`/`approve` (repeatable) — follow-up action buttons distinct from `-o` choices. The user's pick comes back as `selectedAction` so an agent reading `--json` can branch ("user asked me to /verify first instead of approving"). For `approve`, a follow-up action exits **1** — same as deny — so shell chains stay safe.
+- **Structured context flags** carried inside the encrypted payload: `--diff <path>`, `--files a,b,c`, `--exit-code N`, `--tool-name S`. Cleaner than stuffing `--context "$(git diff)"`. Applies to `ask`, `approve`, and `notify`.
+- **`NUDGE_JSON_VERSION=2`** opts into a unified JSON envelope across every command: `{ ok, command, data }` on success and `{ ok, command, error: { code, message } }` on failure. Error codes: `USAGE`, `NOT_PAIRED`, `NETWORK`, `VALIDATION`, `CANCELLED`, `TIMEOUT`, `ERROR`. In v2, errors go to **stdout** (not stderr) so a single parse covers both paths. v1 (per-command ad-hoc shape) remains the default until v2.0.
+
+### Changed
+
+- **`nudge mode <target>`** is deprecated. It now prints a stderr warning and forwards to `nudge status --mode <target>`. Scheduled for removal in v1.3.
+- **`nudge approve`** no longer parses the undocumented `--title` / `--tool` / `--input` / `--cwd` flags on the CLI; passing them prints a warning and ignores them. MCP integrations are unaffected (the handler signature still accepts these fields).
+- **Shared modules**: `core/lib/pending-files.mjs` (in-flight event tracking) and `core/lib/hook-runtime.mjs` (encryption envelope + payload builder) are now shared between the CLI handlers and the Claude Code hook adapter, eliminating two near-identical copies that had drifted on minor field choices.
+- **Pending file format**: persists `sessionId` (and optional `sessionName`) in the JSON body so cross-session lookup doesn't require parsing filenames. Pre-1.2 files written by the hook adapter remain readable via a filename-prefix fallback.
+
+### Fixed
+
+- `nudge cancel --all` correctly removes local `~/.nudge/pending-*.json` for events written by the Claude Code hook adapter before v1.2 (where the filename's last-dash heuristic mis-derived sessionId for Firebase-style eventIds whose first character is `-`).
+- `--ttl N` total wall time is now close to N (previously N + up to 5s) because the post-timeout best-effort backend cancel uses a tight 1.5s budget instead of inheriting the default 5s SIGINT-cleanup budget.
+
 ## [1.0.1] - 2026-05-19
 
 ### Changed

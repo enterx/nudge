@@ -5,7 +5,7 @@
  * Primary entry point. Mirrors the four MCP tools as subcommands plus
  * `pair` (delegates to nudge-pair.sh).
  *
- * `mode` is a deprecated alias for `status --mode` and will be removed in v1.2.
+ * `mode` is a deprecated alias for `status --mode` and will be removed in v1.3.
  *
  * Usage: nudge <subcommand> [options]
  *
@@ -307,7 +307,7 @@ const HELP_BY_CMD = {
   mode:
     'Usage: nudge mode <nudge|terminal> [--json]\n' +
     '  DEPRECATED — use `nudge status --mode <target>` instead.\n' +
-    '  Will be removed in v1.2.',
+    '  Will be removed in v1.3.',
   notify:
     'Usage: nudge notify <body>\n' +
     '       nudge notify <title> <body>\n' +
@@ -391,7 +391,7 @@ async function cmdMode(args) {
     usageError(`mode must be "nudge" or "terminal" (got "${target}")`);
   }
   process.stderr.write(
-    'nudge: `nudge mode` is deprecated and will be removed in v1.2. ' +
+    'nudge: `nudge mode` is deprecated and will be removed in v1.3. ' +
     'Use `nudge status --mode <target>` instead.\n',
   );
   return cmdStatus({ ...args, mode: target });
