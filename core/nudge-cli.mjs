@@ -22,7 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 import { SERVER_VERSION } from './lib/constants.mjs';
@@ -551,12 +551,6 @@ async function cmdApprove(args) {
 //   - level:      "success" on exit 0, "error" otherwise
 //   - context:    tail of stdout+stderr (last N non-empty lines)
 //   - structured: { exitCode, toolName: title }
-
-function basename(s) {
-  if (typeof s !== 'string') return '';
-  const slash = s.lastIndexOf('/');
-  return slash >= 0 ? s.slice(slash + 1) : s;
-}
 
 async function cmdRun(args) {
   const cmd = args._[1];
