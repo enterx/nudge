@@ -394,6 +394,38 @@ await test('cancel --all removes every pending file', async () => {
   }
 });
 
+await test('cancel --all removes pre-1.2 files whose JSON body lacks sessionId', async () => {
+  // Regression: pending files written before v1.2 (Claude Code hook adapter
+  // pre-PR-15) only have sessionId in the filename, not the body. Firebase
+  // eventIds start with `-`, so the filename-prefix fallback's last-dash
+  // heuristic mis-derives the sessionId, and `clearPending(sessionId, eventId)`
+  // would target a wrong path. cmdCancel must delete the file directly.
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  const sessionPart = 'sess-uuid-with-dashes';
+  const eventId = '-OrMvXPU_kaP4J9h2mWp';  // Firebase-style: leading dash
+  const filename = `pending-${sessionPart}-${eventId}.json`;
+  const filePath = join(nudgeDir, filename);
+  writeFileSync(filePath, JSON.stringify({
+    eventId,
+    // NOTE: deliberately no `sessionId` field — pre-1.2 layout.
+    apiUrl: 'http://127.0.0.1:1',
+    token: 'fake',
+    pattern: 'approval',
+    createdAt: Date.now(),
+  }), { mode: 0o600 });
+
+  try {
+    const { code } = await runCli(['cancel', '--all', '--json'], { HOME: homeDir });
+    assert.equal(code, 0);
+    assert.equal(existsSync(filePath), false,
+      'pre-1.2 pending file should be deleted by cancel --all');
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 await test('cancel --last picks the newest by createdAt', async () => {
   const { homeDir, nudgeDir } = setupPendingHome([
     { eventId: 'evt-old', sessionId: 's', createdAt: 1 },

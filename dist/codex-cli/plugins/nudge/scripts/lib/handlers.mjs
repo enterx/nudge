@@ -70,8 +70,16 @@ async function getAuthContext() {
 
 /**
  * Best-effort cancellation of an in-flight event on the backend.
+ *
+ * Default `timeoutMs` (5_000) suits SIGINT cleanup where the user just
+ * pressed Ctrl-C and can spare a moment. The `--ttl` cleanup path passes
+ * a tighter budget so total wall time doesn't exceed `--ttl` by much.
  */
-export async function cancelEventOnBackend(apiUrl, eventId, token, reason = 'Cancelled in terminal') {
+export async function cancelEventOnBackend(
+  apiUrl, eventId, token,
+  reason = 'Cancelled in terminal',
+  { timeoutMs = 5_000 } = {},
+) {
   await fetch(`${apiUrl}/eventsRespond/${eventId}/respond`, {
     method: 'POST',
     headers: {
@@ -79,7 +87,7 @@ export async function cancelEventOnBackend(apiUrl, eventId, token, reason = 'Can
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ action: 'cancelled', reason }),
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(timeoutMs),
   }).catch(() => {});
 }
 
@@ -138,7 +146,9 @@ async function trackAndAwait({
     if (decision.action === 'timeout') {
       // Layer 1 cleanup: the backend doesn't (yet) auto-cancel on TTL, so we
       // best-effort tell it now. Idempotent with any future backend-side TTL.
-      await cancelEventOnBackend(apiUrl, eventId, token, 'TTL elapsed');
+      // Tight budget (1.5s) so `--ttl N` doesn't routinely stretch to N+5 in
+      // total wall time — this is fire-and-forget reliability, not a guarantee.
+      await cancelEventOnBackend(apiUrl, eventId, token, 'TTL elapsed', { timeoutMs: 1_500 });
     }
     return decision;
   } finally {
