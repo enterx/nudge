@@ -232,6 +232,57 @@ await test('run --on success skips notify when child fails', async () => {
   assert.doesNotMatch(stderr, /notification skipped/);
 });
 
+// --- attachments (--image / --file) ---
+
+await test('--image with missing file exits 2 with helpful message', async () => {
+  const { code, stderr } = await runCli(
+    ['approve', 'deploy', '--image', '/no/such/file.png'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /attachment.*cannot read/);
+});
+
+await test('--file with missing path exits 2', async () => {
+  const { code, stderr } = await runCli(
+    ['notify', 'Build', 'failed', '--file', '/no/such/file.log'],
+  );
+  assert.equal(code, 2);
+  assert.match(stderr, /attachment.*cannot read/);
+});
+
+await test('--image with oversize file exits 2 with limit message', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'nudge-att-cli-'));
+  try {
+    const big = join(tmp, 'huge.png');
+    writeFileSync(big, Buffer.alloc(3 * 1024 * 1024, 'x'));
+    const { code, stderr } = await runCli(
+      ['approve', 'big image test', '--image', big],
+    );
+    assert.equal(code, 2);
+    assert.match(stderr, /exceeds the .*MB inline limit/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+await test('--image with a small file is accepted past parser', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'nudge-att-cli-'));
+  try {
+    const small = join(tmp, 'tiny.png');
+    // Valid 1x1 PNG header bytes are enough to be a "real" small file.
+    writeFileSync(small, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const { code, stderr } = await runCli(
+      ['approve', 'small image', '--image', small],
+      ENV_UNPAIRED,
+    );
+    // Parser accepted the attachment; we exit at the unpaired stage.
+    assert.equal(code, 3);
+    assert.match(stderr, /not configured|re-pair|not paired/i);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // --- --ttl client-side timeout ---
 
 await test('--ttl with non-positive number exits 2', async () => {

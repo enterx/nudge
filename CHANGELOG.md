@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`nudge run -- <cmd> [args...]`** — wrap a child command, stream its stdio through, and notify on exit with exit code, duration, and the last N lines of output. Drop-in wrap: the child's exit code propagates so `nudge run -- make test` is interchangeable with `make test`. Flags: `--on success|fail|always`, `--tail N`, `--title T`, `--ask` (use approve flow instead of notify), `--context C`, `--session N`.
+- **`--image <path>` / `--file <path>`** (repeatable) on `ask`/`approve`/`notify` — attach an image or file (≤ 2MB per file) inlined into the encrypted payload. Mime is auto-detected from the extension. Attachments live in the encrypted inner JSON as `attachments: [{ filename, mime, sizeBytes, sha256, dataBase64 }]` so mobile decrypts and renders on-device. Larger files will eventually go via Storage; the 2MB ceiling enforces the inline-only path for now.
 
 ## [1.1.0] - 2026-05-21
 

@@ -39,6 +39,7 @@ import {
   findPendingByEventId,
   postCancel,
 } from './lib/pending-files.mjs';
+import { loadAttachment } from './lib/attachments.mjs';
 
 const CLI_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -46,14 +47,19 @@ const CLI_DIR = dirname(fileURLToPath(import.meta.url));
 
 // Flags that accumulate multiple values into an array on `args`.
 // Both long form (`--<key>`) and the short alias map to the same bucket.
+// `--image` / `--file` share the `attachmentPaths` bucket — mime is
+// auto-detected so the two flags differ only by user intent (and `--files`
+// plural is unrelated, it's a comma-separated structured-context flag).
 const ACCUMULATING_FLAGS = {
   o: 'options',
   option: 'options',
   action: 'actions',
+  image: 'attachmentPaths',
+  file: 'attachmentPaths',
 };
 
 function parseArgs(argv) {
-  const args = { _: [], options: [], actions: [], flags: new Set() };
+  const args = { _: [], options: [], actions: [], attachmentPaths: [], flags: new Set() };
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (tok === '--') {
@@ -118,6 +124,15 @@ function optionString(args, key) {
     usageError(`--${key} requires a value`);
   }
   return value;
+}
+
+function parseAttachments(args) {
+  if (!args.attachmentPaths || args.attachmentPaths.length === 0) return [];
+  try {
+    return args.attachmentPaths.map((p) => loadAttachment(p));
+  } catch (err) {
+    usageError(err.message);
+  }
 }
 
 function parseTtl(args) {
@@ -421,12 +436,14 @@ async function cmdNotify(args) {
   if (!body) usageError('notify requires a body (pass a message or --body)');
 
   const structured = parseStructured(args);
+  const attachments = parseAttachments(args);
   const payload = {
     title,
     body,
     ...(args.level && { level: args.level }),
     ...(args.context && { context: args.context }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
     ...(args.session && { sessionName: args.session }),
   };
   const result = await runNotify(payload);
@@ -450,6 +467,7 @@ async function cmdAsk(args) {
 
   const session = optionString(args, 'session');
   const structured = parseStructured(args);
+  const attachments = parseAttachments(args);
   const ttl = parseTtl(args);
 
   const payload = {
@@ -460,6 +478,7 @@ async function cmdAsk(args) {
     ...(textOnly && { textOnly: true }),
     ...(args.context && { context: args.context }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
     ...(ttl !== undefined && { ttl }),
     ...(session && { sessionName: session }),
   };
@@ -504,12 +523,14 @@ async function cmdApprove(args) {
 
   const actions = args.actions.map(parseOption);
   const structured = parseStructured(args);
+  const attachments = parseAttachments(args);
   const ttl = parseTtl(args);
 
   const payload = {
     description,
     ...(actions.length > 0 && { actions }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
     ...(ttl !== undefined && { ttl }),
     ...(args.context && { context: args.context }),
     ...(args.session && { sessionName: args.session }),

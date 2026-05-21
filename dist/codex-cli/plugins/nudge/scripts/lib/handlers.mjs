@@ -111,6 +111,23 @@ function validateChoiceList(list, kind) {
   }
 }
 
+function validateAttachments(list) {
+  if (!Array.isArray(list)) {
+    throw new Error('attachments must be an array');
+  }
+  for (const a of list) {
+    if (typeof a !== 'object' || a === null) {
+      throw new Error('Each attachment must be an object');
+    }
+    if (typeof a.mime !== 'string' || !a.mime) {
+      throw new Error('Each attachment must have a "mime" string');
+    }
+    if (typeof a.dataBase64 !== 'string' || !a.dataBase64) {
+      throw new Error('Each attachment must have a "dataBase64" string');
+    }
+  }
+}
+
 /**
  * Cross-cutting lifecycle for `eventsCreate` → SSE wait paths used by
  * `runAskUser` and `runApprove`. Persists a pending file, hooks up
@@ -176,6 +193,7 @@ export async function runAskUser(args, hooks = {}) {
     textOnly = false,
     context,
     structured,
+    attachments = [],
     ttl,
     sessionName: argSessionName,
   } = args;
@@ -193,6 +211,7 @@ export async function runAskUser(args, hooks = {}) {
 
   validateChoiceList(options, 'option');
   validateChoiceList(actions, 'action');
+  validateAttachments(attachments);
   if (!textOnly && options.length === 0 && actions.length === 0) {
     throw new Error('ask requires options, --text, or at least one --action');
   }
@@ -207,6 +226,7 @@ export async function runAskUser(args, hooks = {}) {
     description: question,
     ...(context && { context }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -282,6 +302,7 @@ export async function runApprove(args, hooks = {}) {
     cwd,
     actions = [],
     structured,
+    attachments = [],
     ttl,
     sessionName: argSessionName,
   } = args;
@@ -302,6 +323,7 @@ export async function runApprove(args, hooks = {}) {
   validateStringLength(sessionName, 'sessionName');
 
   validateChoiceList(actions, 'action');
+  validateAttachments(attachments);
 
   const { token, apiUrl } = await getAuthContext();
   const approvalLabel = toolName === 'nudge_approve' ? 'Approval' : toolName;
@@ -315,6 +337,7 @@ export async function runApprove(args, hooks = {}) {
     ...(context && { context }),
     ...(cwd && { cwd }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -382,8 +405,10 @@ export async function runNotify(args) {
     level = 'info',
     context,
     structured,
+    attachments = [],
     sessionName: argSessionName,
   } = args;
+  validateAttachments(attachments);
 
   const sessionName = argSessionName || getSessionNameLazy();
   if (argSessionName) persistSessionName(argSessionName);
@@ -411,6 +436,7 @@ export async function runNotify(args) {
     description: body,
     ...(context && { context }),
     ...(structured && { structured }),
+    ...(attachments.length > 0 && { attachments }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
