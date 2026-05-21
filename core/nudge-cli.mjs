@@ -32,10 +32,10 @@ import {
   runNotify,
   runStatus,
 } from './lib/handlers.mjs';
+import { unlinkSync } from 'node:fs';
 import {
   listAllPending,
   findPendingByEventId,
-  clearPending,
   postCancel,
 } from './lib/pending-files.mjs';
 
@@ -584,7 +584,7 @@ async function cmdCancel(args) {
   }
 
   const cancelled = [];
-  await Promise.all(targets.map(async ({ data }) => {
+  await Promise.all(targets.map(async ({ file, data }) => {
     if (!data.eventId || !data.apiUrl || !data.token) return;
     await postCancel({
       apiUrl: data.apiUrl,
@@ -592,7 +592,12 @@ async function cmdCancel(args) {
       token: data.token,
       reason: 'Cancelled via nudge cancel',
     });
-    clearPending(data.sessionId, data.eventId);
+    // Delete the file directly. We already have its path from
+    // listAllPending — going through clearPending would re-derive the
+    // path from sessionId+eventId, which fails for pre-1.2 files whose
+    // sessionId fallback misparses Firebase-style eventIds (those start
+    // with `-`, confusing the last-dash heuristic).
+    try { unlinkSync(file); } catch { /* ignore */ }
     cancelled.push({
       eventId: data.eventId,
       sessionId: data.sessionId,
