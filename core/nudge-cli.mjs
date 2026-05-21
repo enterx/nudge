@@ -33,6 +33,7 @@ import {
 } from './lib/handlers.mjs';
 import {
   listAllPending,
+  findPendingByEventId,
   clearPending,
   postCancel,
 } from './lib/pending-files.mjs';
@@ -40,6 +41,14 @@ import {
 const CLI_DIR = dirname(fileURLToPath(import.meta.url));
 
 // --- Tiny argv parser (no deps) ---------------------------------------------
+
+// Flags that accumulate multiple values into an array on `args`.
+// Both long form (`--<key>`) and the short alias map to the same bucket.
+const ACCUMULATING_FLAGS = {
+  o: 'options',
+  option: 'options',
+  action: 'actions',
+};
 
 function parseArgs(argv) {
   const args = { _: [], options: [], actions: [], flags: new Set() };
@@ -53,14 +62,10 @@ function parseArgs(argv) {
       const eq = tok.indexOf('=');
       const key = eq >= 0 ? tok.slice(2, eq) : tok.slice(2);
       const inlineValue = eq >= 0 ? tok.slice(eq + 1) : undefined;
-      if (key === 'option' || key === 'o') {
+      if (ACCUMULATING_FLAGS[key]) {
         const value = inlineValue ?? argv[++i];
         if (value == null) usageError(`--${key} requires a value`);
-        args.options.push(value);
-      } else if (key === 'action') {
-        const value = inlineValue ?? argv[++i];
-        if (value == null) usageError('--action requires a value');
-        args.actions.push(value);
+        args[ACCUMULATING_FLAGS[key]].push(value);
       } else if (inlineValue !== undefined) {
         args[key] = inlineValue;
       } else if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
@@ -71,10 +76,10 @@ function parseArgs(argv) {
       }
     } else if (tok.startsWith('-') && tok.length > 1) {
       const key = tok.slice(1);
-      if (key === 'o') {
+      if (ACCUMULATING_FLAGS[key]) {
         const value = argv[++i];
-        if (value == null) usageError('-o requires a value');
-        args.options.push(value);
+        if (value == null) usageError(`-${key} requires a value`);
+        args[ACCUMULATING_FLAGS[key]].push(value);
       } else if (key === 'h') {
         args.flags.add('help');
         args.help = true;
@@ -518,40 +523,35 @@ async function cmdCancel(args) {
     usageError('cancel selectors are mutually exclusive — pick one of <event-id>, --session, --last, --all');
   }
 
-  const pending = listAllPending();
   const eventIdTarget = args._[1];
   const sessionTarget = args.session;
 
   let targets;
   if (eventIdTarget) {
-    targets = pending.filter((p) => p.data.eventId === eventIdTarget);
+    // Fast path — only parse files whose name matches the eventId suffix
+    // instead of loading every pending JSON.
+    targets = findPendingByEventId(eventIdTarget);
     if (targets.length === 0) {
       throw new Error(`No pending event found with id "${eventIdTarget}"`);
     }
   } else if (sessionTarget) {
-    targets = pending.filter(
+    targets = listAllPending().filter(
       (p) => p.data.sessionName === sessionTarget || p.data.sessionId === sessionTarget,
     );
     if (targets.length === 0) {
       throw new Error(`No pending events found for session "${sessionTarget}"`);
     }
-  } else if (args.flags.has('last')) {
-    if (pending.length === 0) {
-      printResult({ cancelled: 0, events: [] }, ['No pending events to cancel.']);
-      return;
-    }
-    targets = [
-      pending.reduce((newest, p) =>
-        (p.data.createdAt ?? 0) > (newest.data.createdAt ?? 0) ? p : newest,
-      ),
-    ];
   } else {
-    // --all
+    const pending = listAllPending();
     if (pending.length === 0) {
       printResult({ cancelled: 0, events: [] }, ['No pending events to cancel.']);
       return;
     }
-    targets = pending;
+    targets = args.flags.has('last')
+      ? [pending.reduce((newest, p) =>
+          (p.data.createdAt ?? 0) > (newest.data.createdAt ?? 0) ? p : newest,
+        )]
+      : pending;
   }
 
   const cancelled = [];

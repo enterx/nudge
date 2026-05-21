@@ -70,6 +70,32 @@ export function clearPending(sessionId, eventId) {
   try { unlinkSync(pendingFilePath(sessionId, eventId)); } catch { /* ignore */ }
 }
 
+function pendingFileNames(filter = () => true) {
+  try {
+    return readdirSync(NUDGE_DIR).filter(
+      (f) => f.startsWith('pending-') && f.endsWith('.json') && filter(f),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function parsePendingFile(basename) {
+  const fullPath = join(NUDGE_DIR, basename);
+  try {
+    const data = JSON.parse(readFileSync(fullPath, 'utf-8'));
+    if (!data.sessionId) {
+      // Best-effort fallback for pre-1.2 pending files (sessionId only in name).
+      const stripped = basename.slice('pending-'.length, -'.json'.length);
+      const lastDash = stripped.lastIndexOf('-');
+      if (lastDash > 0) data.sessionId = stripped.slice(0, lastDash);
+    }
+    return { file: fullPath, data };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Return every pending event under `~/.nudge`, decoded from disk.
  * The `sessionId` field comes from the JSON body when present;
@@ -78,29 +104,20 @@ export function clearPending(sessionId, eventId) {
  * Files that fail to parse are skipped silently.
  */
 export function listAllPending() {
-  let files;
-  try {
-    files = readdirSync(NUDGE_DIR).filter(
-      (f) => f.startsWith('pending-') && f.endsWith('.json'),
-    );
-  } catch {
-    return [];
-  }
-  const result = [];
-  for (const file of files) {
-    const fullPath = join(NUDGE_DIR, file);
-    try {
-      const data = JSON.parse(readFileSync(fullPath, 'utf-8'));
-      if (!data.sessionId) {
-        // Best-effort fallback for pre-1.2 pending files.
-        const stripped = file.slice('pending-'.length, -'.json'.length);
-        const lastDash = stripped.lastIndexOf('-');
-        if (lastDash > 0) data.sessionId = stripped.slice(0, lastDash);
-      }
-      result.push({ file: fullPath, data });
-    } catch { /* ignore malformed file */ }
-  }
-  return result;
+  return pendingFileNames().map(parsePendingFile).filter(Boolean);
+}
+
+/**
+ * Find pending events whose `eventId` matches. Walks the directory listing
+ * (cheap) and only parses files whose name ends with `-{eventId}.json`, so
+ * a targeted `nudge cancel <event-id>` doesn't pay for parsing unrelated
+ * sessions' pending files.
+ */
+export function findPendingByEventId(eventId) {
+  const suffix = `-${eventId}.json`;
+  return pendingFileNames((f) => f.endsWith(suffix))
+    .map(parsePendingFile)
+    .filter((entry) => entry && entry.data.eventId === eventId);
 }
 
 /**
@@ -109,23 +126,9 @@ export function listAllPending() {
  */
 export function listPendingForSession(sessionId) {
   const prefix = `pending-${sessionId}-`;
-  let files;
-  try {
-    files = readdirSync(NUDGE_DIR).filter(
-      (f) => f.startsWith(prefix) && f.endsWith('.json'),
-    );
-  } catch {
-    return [];
-  }
-  const result = [];
-  for (const file of files) {
-    const fullPath = join(NUDGE_DIR, file);
-    try {
-      const data = JSON.parse(readFileSync(fullPath, 'utf-8'));
-      result.push({ file: fullPath, data });
-    } catch { /* ignore malformed file */ }
-  }
-  return result;
+  return pendingFileNames((f) => f.startsWith(prefix))
+    .map(parsePendingFile)
+    .filter(Boolean);
 }
 
 /**

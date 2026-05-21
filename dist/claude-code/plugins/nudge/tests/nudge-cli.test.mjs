@@ -58,6 +58,34 @@ function runCli(args, env = {}) {
 const NO_CONFIG_PATH = join(tmpdir(), `nudge-cli-test-${process.pid}-no-config`);
 const ENV_UNPAIRED = { NUDGE_CONFIG_PATH: NO_CONFIG_PATH };
 
+// --- Pending-file test fixture ----------------------------------------------
+//
+// Most `nudge cancel` tests want an isolated `~/.nudge` with one or more
+// pending-*.json fixtures. This helper creates a tempdir HOME, populates it,
+// and returns the path so the caller can set `HOME` in the child env.
+// `apiUrl` defaults to an unreachable address — `postCancel` silently swallows
+// the resulting network error, which is what we want here (we only care that
+// the local pending file gets resolved/removed).
+
+import { mkdirSync } from 'node:fs';
+
+function setupPendingHome(items) {
+  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
+  const nudgeDir = join(homeDir, '.nudge');
+  mkdirSync(nudgeDir, { mode: 0o700 });
+  for (const item of items) {
+    const filename = `pending-${item.sessionId}-${item.eventId}.json`;
+    writeFileSync(join(nudgeDir, filename), JSON.stringify({
+      apiUrl: 'http://127.0.0.1:1',
+      token: 'fake-token',
+      pattern: 'approval',
+      createdAt: Date.now(),
+      ...item,
+    }), { mode: 0o600 });
+  }
+  return { homeDir, nudgeDir };
+}
+
 console.log('\nNudge CLI tests\n');
 
 await test('--help prints usage and exits 0', async () => {
@@ -300,23 +328,10 @@ await test('cancel --session <unknown> exits 5', async () => {
 });
 
 await test('cancel <event-id> resolves a real pending file, removes it, exits 0', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  // Mirror the layout pending-files.mjs uses.
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
+  const { homeDir, nudgeDir } = setupPendingHome([
+    { eventId: 'evt-XYZ', sessionId: 'sess-A', sessionName: 'Deploy v1.2', toolName: 'Bash' },
+  ]);
   const pendingPath = join(nudgeDir, 'pending-sess-A-evt-XYZ.json');
-  writeFileSync(pendingPath, JSON.stringify({
-    eventId: 'evt-XYZ',
-    sessionId: 'sess-A',
-    sessionName: 'Deploy v1.2',
-    apiUrl: 'http://127.0.0.1:1',  // unreachable — postCancel swallows error
-    token: 'fake-token',
-    pattern: 'approval',
-    toolName: 'Bash',
-    createdAt: Date.now(),
-  }), { mode: 0o600 });
-
   try {
     const { code, stdout } = await runCli(['cancel', 'evt-XYZ', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
@@ -331,21 +346,11 @@ await test('cancel <event-id> resolves a real pending file, removes it, exits 0'
 });
 
 await test('cancel --all removes every pending file', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
-  for (const evt of ['a', 'b', 'c']) {
-    writeFileSync(join(nudgeDir, `pending-sess-${evt}-evt-${evt}.json`), JSON.stringify({
-      eventId: `evt-${evt}`,
-      sessionId: `sess-${evt}`,
-      apiUrl: 'http://127.0.0.1:1',
-      token: 't',
-      pattern: 'approval',
-      createdAt: Date.now() + evt.charCodeAt(0),
-    }), { mode: 0o600 });
-  }
-
+  const { homeDir } = setupPendingHome(
+    ['a', 'b', 'c'].map((s) => ({
+      eventId: `evt-${s}`, sessionId: `sess-${s}`, createdAt: Date.now() + s.charCodeAt(0),
+    })),
+  );
   try {
     const { code, stdout } = await runCli(['cancel', '--all', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
@@ -357,19 +362,10 @@ await test('cancel --all removes every pending file', async () => {
 });
 
 await test('cancel --last picks the newest by createdAt', async () => {
-  const homeDir = mkdtempSync(join(tmpdir(), 'nudge-cancel-test-'));
-  const nudgeDir = join(homeDir, '.nudge');
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(nudgeDir, { mode: 0o700 });
-  writeFileSync(join(nudgeDir, 'pending-s-evt-old.json'), JSON.stringify({
-    eventId: 'evt-old', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
-    pattern: 'approval', createdAt: 1,
-  }), { mode: 0o600 });
-  writeFileSync(join(nudgeDir, 'pending-s-evt-new.json'), JSON.stringify({
-    eventId: 'evt-new', sessionId: 's', apiUrl: 'http://127.0.0.1:1', token: 't',
-    pattern: 'approval', createdAt: 9999999,
-  }), { mode: 0o600 });
-
+  const { homeDir, nudgeDir } = setupPendingHome([
+    { eventId: 'evt-old', sessionId: 's', createdAt: 1 },
+    { eventId: 'evt-new', sessionId: 's', createdAt: 9999999 },
+  ]);
   try {
     const { code, stdout } = await runCli(['cancel', '--last', '--json'], { HOME: homeDir });
     assert.equal(code, 0);
