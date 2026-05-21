@@ -189,6 +189,49 @@ await test('mode help shows deprecation notice', async () => {
   assert.match(stdout, /DEPRECATED/);
 });
 
+// --- run subcommand ---
+
+await test('run without a command exits 2', async () => {
+  const { code, stderr } = await runCli(['run']);
+  assert.equal(code, 2);
+  assert.match(stderr, /run requires a command/);
+});
+
+await test('run --on with invalid value exits 2', async () => {
+  const { code, stderr } = await runCli(['run', '--on', 'maybe', '--', '/bin/sh', '-c', 'exit 0']);
+  assert.equal(code, 2);
+  assert.match(stderr, /--on must be one of/);
+});
+
+await test('run --tail with non-integer exits 2', async () => {
+  const { code, stderr } = await runCli(['run', '--tail', '1.5', '--', '/bin/sh', '-c', 'exit 0']);
+  assert.equal(code, 2);
+  assert.match(stderr, /--tail must be a non-negative integer/);
+});
+
+await test('run propagates child exit code (success path, notify skipped when unpaired)', async () => {
+  const { code, stderr } = await runCli(['run', '--on', 'success', '--', '/bin/sh', '-c', 'exit 0'], ENV_UNPAIRED);
+  // Child exited 0; unpaired notify is best-effort and skipped.
+  assert.equal(code, 0);
+  // No exit code other than 0 should appear; stderr may carry the
+  // "notification skipped" line but the child's exit is what matters.
+  assert.match(stderr, /notification skipped|^$/);
+});
+
+await test('run propagates child exit code (failure path)', async () => {
+  const { code } = await runCli(['run', '--on', 'fail', '--', '/bin/sh', '-c', 'exit 1'], ENV_UNPAIRED);
+  // /usr/bin/false exits 1. Unpaired notify is skipped, child's exit propagates.
+  assert.equal(code, 1);
+});
+
+await test('run --on success skips notify when child fails', async () => {
+  const { code, stderr } = await runCli(['run', '--on', 'success', '--', '/bin/sh', '-c', 'exit 1'], ENV_UNPAIRED);
+  assert.equal(code, 1);
+  // We didn't try to notify, so the "notification skipped" warning should
+  // be absent.
+  assert.doesNotMatch(stderr, /notification skipped/);
+});
+
 // --- --ttl client-side timeout ---
 
 await test('--ttl with non-positive number exits 2', async () => {

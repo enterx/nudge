@@ -131,6 +131,29 @@ Send an approval request. **Exits 0 on approve, 1 on deny or follow-up action** 
 | `--diff <path>` / `--files a,b,c` / `--exit-code N` / `--tool-name S` | Structured context (same semantics as `ask`) |
 | `--json` | Emit `{ approved, reason, selectedAction?, timedOut? }` to stdout |
 
+### `nudge run [options] -- <cmd> [args...]`
+
+Wrap a long-running command. Streams the child's stdout/stderr through to your terminal, then sends a notification (or approval request) when it exits — with the exit code, elapsed time, and the last N lines of output.
+
+```bash
+nudge run -- make deploy
+nudge run --tail 20 --title "Tests" -- npm test
+nudge run --on fail -- ./flaky-job.sh    # quiet on success
+nudge run --ask -- ./build-and-deploy.sh # ask "continue?" after build
+```
+
+The child's exit code is propagated, so `nudge run` is a drop-in wrap (`make test` ≡ `nudge run -- make test`).
+
+| Option | Description |
+|--------|-------------|
+| `--on success\|fail\|always` | When to send the notification (default `always`) |
+| `--tail N` | Last N stdout+stderr lines to include in the notification context (default 50) |
+| `--title T` | Notification title (default: child command basename) |
+| `--ask` | Use `approve` instead of `notify` after exit. Exit 0 on approve, 1 on deny (overrides child's exit code) |
+| `--context C` | Override the context (default: tail of captured output) |
+| `--session N` | Session name for grouping |
+| `--json` | JSON envelope (per `NUDGE_JSON_VERSION`) |
+
 ### `nudge cancel <event-id|--last|--all|--session name>`
 
 Cancel one or more in-flight mobile events **from another process**. Useful in CI cleanup traps, supervisor scripts, or when you want to dismiss an approval card from a different terminal without sending SIGINT to the original `nudge ask`/`approve` invocation.

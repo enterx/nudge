@@ -32,6 +32,7 @@ import {
   runNotify,
   runStatus,
 } from './lib/handlers.mjs';
+import { runWrappedCommand } from './lib/run-wrap.mjs';
 import { unlinkSync } from 'node:fs';
 import {
   listAllPending,
@@ -281,6 +282,7 @@ Subcommands:
   approve <description>         Send an approval request, exit 0/1
   cancel <event-id|--last|--all|--session name>
                                 Cancel an in-flight mobile event from another process
+  run -- <cmd> [args...]        Wrap a command; notify on exit with code + duration + tail
 
 Common options:
   --json                        Emit JSON to stdout (default: human-readable)
@@ -348,6 +350,17 @@ const HELP_BY_CMD = {
     '  ~/.nudge/pending-*.json — the same tracking files used by hooks.\n' +
     '  Exit 0 on success (including "nothing to cancel"); 5 when an explicit\n' +
     '  <event-id> or --session does not match any pending event.',
+  run:
+    'Usage: nudge run [--on success|fail|always] [--tail N] [--title T]\n' +
+    '                 [--ask] [--context C] [--session N] [--json] -- <cmd> [args...]\n' +
+    '  Run <cmd> as a child process, stream its stdout/stderr through, and\n' +
+    '  notify when it exits with exit code, duration, and the last N lines.\n' +
+    '  Default: notify always, tail=50, title=<cmd>, level=success|error.\n' +
+    '  --on fail / success limits notifications to that outcome.\n' +
+    '  --ask uses an approve flow instead of notify (returns 0 on approve,\n' +
+    '  1 on deny, otherwise the child\'s exit code is propagated).\n' +
+    '  The `--` separator is recommended so flags on <cmd> aren\'t consumed\n' +
+    '  by the nudge parser.',
 };
 
 async function cmdPair() {
@@ -526,6 +539,103 @@ async function cmdApprove(args) {
   process.exit(result.approved ? 0 : 1);
 }
 
+// --- cmdRun ------------------------------------------------------------------
+//
+// Wrap a child command and notify when it finishes. CLI-only: no backend or
+// mobile changes required — internally calls runNotify (or runApprove with
+// `--ask`).
+//
+// Notification fields populated from the wrap:
+//   - title:      --title T, else the basename of the child command
+//   - body:       "exit <code> • <durationS>s"
+//   - level:      "success" on exit 0, "error" otherwise
+//   - context:    tail of stdout+stderr (last N non-empty lines)
+//   - structured: { exitCode, toolName: title }
+
+function basename(s) {
+  if (typeof s !== 'string') return '';
+  const slash = s.lastIndexOf('/');
+  return slash >= 0 ? s.slice(slash + 1) : s;
+}
+
+async function cmdRun(args) {
+  const cmd = args._[1];
+  if (!cmd) {
+    usageError('run requires a command (use: nudge run [--flags] -- <cmd> [args...])');
+  }
+  const cmdArgv = args._.slice(2);
+
+  const on = args.on || 'always';
+  if (!['success', 'fail', 'always'].includes(on)) {
+    usageError(`--on must be one of success|fail|always (got "${on}")`);
+  }
+
+  let tailLines = 50;
+  if (args.tail !== undefined) {
+    const n = Number(args.tail);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      usageError(`--tail must be a non-negative integer (got "${args.tail}")`);
+    }
+    tailLines = n;
+  }
+
+  const title = optionString(args, 'title') || basename(cmd) || cmd;
+  const session = optionString(args, 'session');
+
+  const result = await runWrappedCommand(cmd, cmdArgv, { tailLines });
+  const isFail = result.exitCode !== 0;
+  const shouldNotify =
+    on === 'always' || (on === 'fail' && isFail) || (on === 'success' && !isFail);
+
+  if (shouldNotify) {
+    const durationS = (result.durationMs / 1000).toFixed(1);
+    const exitLabel = result.signal
+      ? `signal ${result.signal}`
+      : `exit ${result.exitCode}`;
+    const body = `${exitLabel} • ${durationS}s`;
+    const context = result.tail.length > 0
+      ? result.tail.slice(-tailLines).join('\n')
+      : undefined;
+    const structured = {
+      exitCode: result.exitCode === null ? -1 : result.exitCode,
+      toolName: title,
+    };
+
+    try {
+      if (args.flags.has('ask')) {
+        const approval = await runApprove({
+          description: `${title}: ${body}`,
+          ...(args.context && { context: args.context }),
+          ...(context && !args.context && { context }),
+          structured,
+          ...(session && { sessionName: session }),
+        }, { onEventCreated: installCancel });
+        clearCancel();
+        // Approve flow: 0 if user approved, otherwise 1 (deny / timeout / action).
+        process.exit(approval.approved ? 0 : 1);
+      } else {
+        await runNotify({
+          title,
+          body,
+          level: isFail ? 'error' : 'success',
+          ...(args.context && { context: args.context }),
+          ...(context && !args.context && { context }),
+          structured,
+          ...(session && { sessionName: session }),
+        });
+      }
+    } catch (err) {
+      // Best-effort: a missing pair or network error must not mask the child's
+      // own exit code. Log and fall through to propagate.
+      process.stderr.write(`nudge: notification skipped (${err.message})\n`);
+    }
+  }
+
+  // Propagate the child's exit code so `nudge run -- make test` is a safe
+  // drop-in replacement for `make test` in CI pipelines.
+  process.exit(result.exitCode === null ? 1 : result.exitCode);
+}
+
 // --- cmdCancel ---------------------------------------------------------------
 //
 // Resolve targets from `~/.nudge/pending-*.json`, then issue
@@ -627,6 +737,7 @@ const COMMANDS = {
   ask: cmdAsk,
   approve: cmdApprove,
   cancel: cmdCancel,
+  run: cmdRun,
 };
 
 async function main() {
