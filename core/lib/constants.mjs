@@ -180,5 +180,5 @@ export function getSessionId(hostSessionId) {
 // --- MCP protocol ---
 
 export const SERVER_NAME = 'nudge-mcp';
-export const SERVER_VERSION = '1.1.0';
+export const SERVER_VERSION = '1.2.0';
 export const PROTOCOL_VERSION = '2024-11-05';
