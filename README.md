@@ -294,6 +294,18 @@ nudge/
 
 The repository also keeps legacy adapter code for Claude Code and Codex experiments, but the supported user-facing surface is the `nudge` CLI.
 
+## MCP support is being wound down
+
+`core/nudge-mcp-server.mjs` exposes the same surface as the CLI today (`nudge_ask_user`, `nudge_approve`, `nudge_notify`, `nudge_status`). It exists for the historical reason that coding agents had MCP before they had reliable shell access.
+
+**The CLI is now the canonical surface.** Going forward, the MCP server's coverage of CLI capabilities will progressively be removed:
+
+- New features (`nudge cancel`, `--ttl`, `--text`, `--action`, structured context, `--image` / `--file`, `nudge run`, future additions) ship on the CLI **only**. They will not be back-ported to MCP.
+- Existing MCP tools will keep working for one or two more minor versions, then be deprecated with a warning, then removed.
+- Agents should shell out to `nudge` (`Bash("nudge approve …")`) instead of calling MCP tools. The exit codes and `NUDGE_JSON_VERSION=2` envelope are designed for that path.
+
+If you have a hard dependency on MCP, please open an issue so we can plan a migration window.
+
 ## Running tests
 
 ```bash
