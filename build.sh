@@ -23,11 +23,26 @@ rm -rf "${DIST}"
 # ----------------------------------------------------------------
 CC_DIST="${DIST}/claude-code/plugins/nudge"
 mkdir -p "${CC_DIST}/scripts/lib" "${CC_DIST}/servers" "${CC_DIST}/hooks" "${CC_DIST}/skills"
+mkdir -p "${CC_DIST}/.claude-plugin"
 mkdir -p "${DIST}/claude-code/.claude-plugin"
 
 # Read version from constants.mjs (single source of truth)
 PLUGIN_VERSION=$(grep "SERVER_VERSION" "${CORE}/lib/constants.mjs" | sed "s/.*'\(.*\)'.*/\1/")
 echo "  Version: ${PLUGIN_VERSION}"
+
+# Plugin manifest — REQUIRED for `strict: true` marketplace entries (the default).
+# Without it, `/plugin marketplace add enterx/nudge` loads the marketplace but the
+# plugin silently fails to resolve. Hooks, .mcp.json, and skills/ are auto-discovered.
+cat > "${CC_DIST}/.claude-plugin/plugin.json" <<PLJSON
+{
+  "name": "nudge",
+  "version": "${PLUGIN_VERSION}",
+  "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
+  "author": { "name": "EnterX LLC" },
+  "homepage": "https://github.com/enterx/nudge",
+  "license": "MIT"
+}
+PLJSON
 
 # Marketplace wrapper (version injected from constants.mjs)
 cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" <<MKJSON
@@ -48,6 +63,28 @@ cat > "${DIST}/claude-code/.claude-plugin/marketplace.json" <<MKJSON
   ]
 }
 MKJSON
+
+# Repo-root marketplace — the manifest `/plugin marketplace add enterx/nudge` reads.
+# Regenerated here so its version never drifts from constants.mjs. Source points at the
+# committed dist plugin (which now carries the required .claude-plugin/plugin.json).
+cat > "${REPO_ROOT}/.claude-plugin/marketplace.json" <<ROOTMK
+{
+  "name": "nudge-marketplace",
+  "description": "Nudge - Mobile push notifications for AI coding tool approvals",
+  "owner": { "name": "EnterX LLC" },
+  "plugins": [
+    {
+      "name": "nudge",
+      "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
+      "version": "${PLUGIN_VERSION}",
+      "author": { "name": "EnterX LLC" },
+      "source": "./dist/claude-code/plugins/nudge",
+      "category": "productivity",
+      "license": "MIT"
+    }
+  ]
+}
+ROOTMK
 
 # Copy adapter-specific files
 cp -R "${ADAPTERS}/claude-code/"* "${CC_DIST}/"
@@ -210,7 +247,8 @@ echo "Verifying build..."
 ERRORS=0
 BASE="${DIST}/claude-code/plugins/nudge"
 
-for f in "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.mjs" \
+for f in ".claude-plugin/plugin.json" \
+         "scripts/lib/api.mjs" "scripts/lib/config.mjs" "scripts/lib/constants.mjs" \
          "scripts/lib/sse.mjs" "scripts/lib/token-utils.mjs" "scripts/lib/logger.mjs" \
          "scripts/lib/crypto.mjs" "scripts/lib/encrypt-json.mjs" \
          "servers/nudge-mcp-server.mjs" "scripts/nudge-hook.mjs"; do

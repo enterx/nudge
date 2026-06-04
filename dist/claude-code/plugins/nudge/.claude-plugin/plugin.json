@@ -1,0 +1,8 @@
+{
+  "name": "nudge",
+  "version": "1.2.0",
+  "description": "Mobile push notifications for AI coding tool approvals. Approve or deny actions from your phone.",
+  "author": { "name": "EnterX LLC" },
+  "homepage": "https://github.com/enterx/nudge",
+  "license": "MIT"
+}
