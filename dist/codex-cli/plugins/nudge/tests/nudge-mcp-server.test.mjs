@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
+import { SERVER_VERSION } from '../scripts/lib/constants.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVER_PATH = join(__dirname, '..', 'servers', 'nudge-mcp-server.mjs');
@@ -99,7 +100,7 @@ await test('initialize returns correct protocol version and capabilities', async
     assert.equal(resp.result.protocolVersion, '2024-11-05');
     assert.deepEqual(resp.result.capabilities, { tools: {} });
     assert.equal(resp.result.serverInfo.name, 'nudge-mcp');
-    assert.equal(resp.result.serverInfo.version, '1.2.0');
+    assert.equal(resp.result.serverInfo.version, SERVER_VERSION);
   } finally {
     proc.kill();
   }
