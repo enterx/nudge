@@ -79,6 +79,37 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
     "paired")
       USER_ID=$(json_extract "${VERIFY_RESPONSE}" "userId")
 
+      # Multi-CLI mode (M3): mobile rebound the pairing to its existing UID.
+      # Adopt the mobile's tokens + encryption key; the pairId/token/key we
+      # generated in pairGenerate are now orphaned and discarded.
+      MULTI_CLI=$(json_extract_raw "${VERIFY_RESPONSE}" "multiCli")
+      if [ "${MULTI_CLI}" = "true" ]; then
+        CLI_ID_TOKEN=$(json_extract "${VERIFY_RESPONSE}" "cliIdToken")
+        CLI_REFRESH_TOKEN=$(json_extract "${VERIFY_RESPONSE}" "cliRefreshToken")
+        WRAPPED_KEY=$(json_extract "${VERIFY_RESPONSE}" "wrappedKey")
+        WRAPPING_IV=$(json_extract "${VERIFY_RESPONSE}" "wrappingIv")
+
+        if [ -z "${CLI_ID_TOKEN}" ] || [ -z "${CLI_REFRESH_TOKEN}" ]; then
+          echo "Error: Multi-CLI pairing response missing CLI tokens."
+          exit 1
+        fi
+
+        # Adopt the mobile UID's tokens; the orphan pairId tokens no longer work.
+        TOKEN="${CLI_ID_TOKEN}"
+        REFRESH_TOKEN="${CLI_REFRESH_TOKEN}"
+
+        # Unwrap the mobile's encryption key. PBKDF2 salt MUST be the mobile UID
+        # (USER_ID from this response), not the orphan pairId.
+        if [ -n "${WRAPPED_KEY}" ] && [ -n "${WRAPPING_IV}" ]; then
+          ENCRYPTION_KEY=$(printf '{"pairingCode":"%s","userId":"%s","wrappedKey":"%s","wrappingIv":"%s"}' \
+            "${PAIRING_CODE}" "${USER_ID}" "${WRAPPED_KEY}" "${WRAPPING_IV}" \
+            | node "${SCRIPT_DIR}/lib/unwrap-key.mjs" 2>/dev/null) || {
+            echo "Error: Failed to unwrap encryption key for multi-CLI pairing."
+            exit 1
+          }
+        fi
+      fi
+
       # Validate required fields before writing config
       if [ -z "${TOKEN}" ] || [ -z "${USER_ID}" ]; then
         echo "Error: Incomplete pairing response from server."
