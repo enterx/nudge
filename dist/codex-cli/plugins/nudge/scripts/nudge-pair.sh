@@ -94,20 +94,29 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
           exit 1
         fi
 
+        # A multi-CLI response MUST carry the wrapped key — that's how this device
+        # adopts the mobile's existing encryption key. If it's missing, the server
+        # rebind is incomplete (e.g. it returned the orphan pairId with no key).
+        # Bail loudly rather than silently writing an isolated pairing that the
+        # phone can never reach.
+        if [ -z "${WRAPPED_KEY}" ] || [ -z "${WRAPPING_IV}" ]; then
+          echo "Error: Multi-CLI pairing response missing the wrapped encryption key."
+          echo "       The server did not complete the rebind. Pairing aborted — run /pair again."
+          exit 1
+        fi
+
         # Adopt the mobile UID's tokens; the orphan pairId tokens no longer work.
         TOKEN="${CLI_ID_TOKEN}"
         REFRESH_TOKEN="${CLI_REFRESH_TOKEN}"
 
         # Unwrap the mobile's encryption key. PBKDF2 salt MUST be the mobile UID
         # (USER_ID from this response), not the orphan pairId.
-        if [ -n "${WRAPPED_KEY}" ] && [ -n "${WRAPPING_IV}" ]; then
-          ENCRYPTION_KEY=$(printf '{"pairingCode":"%s","userId":"%s","wrappedKey":"%s","wrappingIv":"%s"}' \
-            "${PAIRING_CODE}" "${USER_ID}" "${WRAPPED_KEY}" "${WRAPPING_IV}" \
-            | node "${SCRIPT_DIR}/lib/unwrap-key.mjs" 2>/dev/null) || {
-            echo "Error: Failed to unwrap encryption key for multi-CLI pairing."
-            exit 1
-          }
-        fi
+        ENCRYPTION_KEY=$(printf '{"pairingCode":"%s","userId":"%s","wrappedKey":"%s","wrappingIv":"%s"}' \
+          "${PAIRING_CODE}" "${USER_ID}" "${WRAPPED_KEY}" "${WRAPPING_IV}" \
+          | node "${SCRIPT_DIR}/lib/unwrap-key.mjs" 2>/dev/null) || {
+          echo "Error: Failed to unwrap encryption key for multi-CLI pairing."
+          exit 1
+        }
       fi
 
       # Validate required fields before writing config
