@@ -12,6 +12,10 @@ echo "--- config.test.mjs ---"
 node tests/config.test.mjs
 
 echo ""
+echo "--- crypto.test.mjs ---"
+node tests/crypto.test.mjs
+
+echo ""
 echo "--- token-utils.test.mjs ---"
 node tests/token-utils.test.mjs
 

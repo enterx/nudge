@@ -9,6 +9,9 @@
 
 import { randomBytes, createCipheriv, createDecipheriv, pbkdf2Sync } from 'node:crypto';
 
+/** GCM auth tag length in bytes — appended to the ciphertext by wrapKey/encryptFields */
+const GCM_TAG_BYTES = 16;
+
 /** PBKDF2 iterations — high enough to resist brute-force on the 40-bit pairing code */
 const PBKDF2_ITERATIONS = 600_000;
 
@@ -58,6 +61,30 @@ export function wrapKey(encryptionKeyBase64, wrappingKey) {
     wrappedKey: wrapped.toString('base64'),
     wrappingIv: iv.toString('base64'),
   };
+}
+
+/**
+ * Unwrap (decrypt) an encryption key that was wrapped with wrapKey().
+ *
+ * Used during multi-CLI pairing: the mobile app wraps its existing encryption
+ * key (K1) with a key derived from the pairing code + mobile UID and returns it
+ * via pairVerify. This CLI unwraps it so all devices share the same key.
+ *
+ * @param {string} wrappedKeyBase64 - Base64-encoded wrapped key (ciphertext + authTag)
+ * @param {string} wrappingIvBase64 - Base64-encoded IV used during wrapping
+ * @param {Buffer} wrappingKey - 32-byte wrapping key from deriveWrappingKey()
+ * @returns {string} Base64-encoded AES-256 encryption key (the original plaintext)
+ */
+export function unwrapKey(wrappedKeyBase64, wrappingIvBase64, wrappingKey) {
+  const wrapped = Buffer.from(wrappedKeyBase64, 'base64');
+  const iv = Buffer.from(wrappingIvBase64, 'base64');
+  const ciphertext = wrapped.subarray(0, wrapped.length - GCM_TAG_BYTES);
+  const authTag = wrapped.subarray(wrapped.length - GCM_TAG_BYTES);
+
+  const decipher = createDecipheriv('aes-256-gcm', wrappingKey, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return decrypted.toString('utf8');
 }
 
 /**

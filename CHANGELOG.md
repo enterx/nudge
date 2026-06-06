@@ -5,6 +5,18 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-06
+
+Adds multi-CLI pairing (M3): a second computer can join a phone that is already paired, sharing the phone's identity and end-to-end encryption key instead of creating a separate account. Fully backwards compatible — the ordinary first-pair flow is unchanged, and older plugins keep working against the updated backend for first-pair.
+
+### Added
+
+- **Multi-CLI pairing** — when `pairVerify` returns `multiCli: true` (the phone rebound the pairing to its existing UID during *pair another computer*), `nudge pair` now adopts the phone's freshly-issued `cliIdToken` / `cliRefreshToken` and unwraps the phone's encryption key via `PBKDF2(pairingCode, mobileUid)`, so every paired device shares one UID and one key. Responses without `multiCli` keep the existing single-CLI behavior. New `crypto.mjs` `unwrapKey()` and `lib/unwrap-key.mjs` helper (built-ins only; sensitive values passed via stdin).
+
+### Fixed
+
+- **Abort incomplete multi-CLI rebinds** — if a `multiCli: true` response is missing `wrappedKey` / `wrappingIv`, `nudge pair` now fails loudly instead of silently writing an isolated pairing (own UID + locally-generated key) that the phone could never reach. Surfaces a broken server rebind at pair time rather than at the first failed `approve`.
+
 ## [1.2.0] - 2026-05-22
 
 CLI-side minor release. Adds two differentiating features. No backend changes required for the CLI to work; mobile UI for attachment rendering ships in a separate release.
