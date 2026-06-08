@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 
 import { PROVIDER, SERVER_VERSION, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
-import { readConfig, getApiUrl } from './lib/config.mjs';
+import { readConfig, getApiUrl, getOrCreateInstallId } from './lib/config.mjs';
 import { getValidToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
@@ -180,6 +180,11 @@ async function main() {
 
   const apiUrl = getApiUrl(config);
 
+  // Stable per-computer handle (ADR-003 / M4). Tags the event so the backend
+  // refreshes this computer's lastSeenAt and can reject a revoked computer.
+  let installId = null;
+  try { installId = getOrCreateInstallId(); } catch { /* non-fatal */ }
+
   // --- Clean up ALL orphaned pending events ---
   // Remaining pending files are from Escape or Terminal No (both use SIGKILL,
   // hook couldn't clean up). Claude Code does NOT fire PostToolUseFailure for
@@ -228,6 +233,7 @@ async function main() {
       toolName,
       pattern: isAskUser ? 'elicitation' : 'approval',
       sessionId,
+      ...(installId && { installId }),
       ...(sessionName && { sessionName }),
       ...(isAskUser && askUserOptions && { options: askUserOptions }),
       ...(isAskUser && { multiSelect: askUserMultiSelect }),
@@ -259,7 +265,17 @@ async function main() {
       }
       process.exit(0);
     }
-    throw err; // re-throw non-402 errors → caught by outer catch → exit(0)
+    if (err.status === 403 && err.body?.code === 'COMPUTER_REVOKED') {
+      // This computer was removed from the paired list in the mobile app.
+      // Stop sending events to the phone and fall back to the terminal prompt;
+      // re-pair to use Nudge from this machine again.
+      process.stderr.write(
+        'Nudge: This computer was unpaired from the Nudge app. ' +
+        'Run /pair to reconnect. Falling back to terminal prompt.\n',
+      );
+      process.exit(0);
+    }
+    throw err; // re-throw other errors → caught by outer catch → exit(0)
   }
 
   const eventId = createResp.eventId;

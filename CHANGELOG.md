@@ -5,6 +5,20 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-06-08
+
+Adds the CLI half of **paired computers** (M4): each machine registers itself with the phone so the mobile app can list which computers are paired and revoke any one of them. Fully backwards compatible — older plugins keep working (they simply don't appear in the list until upgraded).
+
+### Added
+
+- **Register this computer after pairing** — on a successful `nudge pair` (first-pair and multi-CLI), the CLI encrypts its machine metadata (hostname / os / arch) with the shared E2E key and POSTs it to `pairRegisterComputer`. The server only ever stores ciphertext; the plaintext `installId` is the document key. New `lib/register-computer.mjs` + `lib/register-computer-run.mjs` (built-ins only; sensitive values via stdin).
+- **Stable per-machine install ID on events** — events now carry an `installId` so the backend can refresh this computer's `lastSeenAt` and reject a revoked computer.
+- **Revoked-computer handling** — when the phone removes this computer, the next event gets `403 COMPUTER_REVOKED`; the hook falls back to the terminal prompt with a "run /pair to reconnect" message.
+
+### Fixed
+
+- **One machine = one computer entry** — the install ID now lives in its own `~/.nudge/install_id` file instead of the main config. `nudge pair` wipes the config on every run, so storing it there minted a fresh ID each re-pair and the same machine appeared as multiple computers in the mobile list. A dedicated file survives re-pair; a legacy ID in the old config location is migrated automatically.
+
 ## [1.3.0] - 2026-06-06
 
 Adds multi-CLI pairing (M3): a second computer can join a phone that is already paired, sharing the phone's identity and end-to-end encryption key instead of creating a separate account. Fully backwards compatible — the ordinary first-pair flow is unchanged, and older plugins keep working against the updated backend for first-pair.

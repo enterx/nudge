@@ -22,7 +22,7 @@ import {
   SERVER_VERSION,
   getSessionId,
 } from './constants.mjs';
-import { readConfig, getApiUrl, updateConfigKey } from './config.mjs';
+import { readConfig, getApiUrl, updateConfigKey, getOrCreateInstallId } from './config.mjs';
 import { getValidToken } from './token-utils.mjs';
 import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
@@ -39,6 +39,22 @@ function validateStringLength(value, name) {
 
 function getSessionIdLazy() {
   return getSessionId();
+}
+
+// Cache the install ID for this process so each event doesn't re-read/write
+// config. The ID is stable across re-pairs (ADR-003 / M4); it tags every
+// event so the backend can refresh this computer's lastSeenAt and reject
+// events from a revoked computer (403 COMPUTER_REVOKED).
+let _installIdCache;
+function getInstallIdLazy() {
+  if (_installIdCache === undefined) {
+    try {
+      _installIdCache = getOrCreateInstallId();
+    } catch {
+      _installIdCache = null;
+    }
+  }
+  return _installIdCache;
 }
 
 function getSessionNameLazy() {
@@ -239,6 +255,7 @@ export async function runAskUser(args, hooks = {}) {
       toolName: 'nudge_ask_user',
       pattern: 'elicitation',
       sessionId: getSessionIdLazy(),
+      ...(getInstallIdLazy() && { installId: getInstallIdLazy() }),
       ...(sessionName && { sessionName }),
       options,
       multiSelect,
@@ -350,6 +367,7 @@ export async function runApprove(args, hooks = {}) {
       toolName,
       pattern: 'approval',
       sessionId: getSessionIdLazy(),
+      ...(getInstallIdLazy() && { installId: getInstallIdLazy() }),
       ...(sessionName && { sessionName }),
       ...(actions.length > 0 && { actions }),
       ...(ttl !== undefined && { ttl }),
