@@ -157,6 +157,16 @@ while [ ${POLL_COUNT} -lt ${MAX_POLLS} ]; do
 }"
       fi
 
+      # Register this machine in the paired-computers list (ADR-003 / M4).
+      # Best-effort: pairing already succeeded, so a failure here is non-fatal —
+      # the mobile list simply won't show this computer until the next event or
+      # re-pair. Encrypted metadata + plaintext installId are sent via stdin.
+      if [ -n "${ENCRYPTION_KEY}" ]; then
+        printf '{"apiUrl":"%s","encryptionKey":"%s","token":"%s"}' \
+          "${API_URL}" "${ENCRYPTION_KEY}" "${TOKEN}" \
+          | node "${SCRIPT_DIR}/lib/register-computer-run.mjs" >/dev/null 2>&1 || true
+      fi
+
       echo ""
       echo "Paired! Run /test to verify."
       exit 0

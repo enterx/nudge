@@ -19,6 +19,13 @@ export const NUDGE_CONFIG_DIR =
 export const CONFIG_PATH =
   process.env.NUDGE_CONFIG_PATH || join(NUDGE_CONFIG_DIR, 'config');
 
+// Stable per-machine install ID lives in its OWN file, NOT in the main config.
+// `nudge pair` wipes the config on every run, so storing the install ID there
+// would mint a fresh one each re-pair and the same machine would appear as
+// multiple computers in the mobile list (ADR-003 / M4). A dedicated file
+// survives re-pair, keeping one machine = one computer entry.
+export const INSTALL_ID_PATH = join(NUDGE_CONFIG_DIR, 'install_id');
+
 export const LAST_NOTIFY_PATH = join(NUDGE_CONFIG_DIR, 'last_notify');
 
 // Per-session file keyed by parent PID (= host AI tool process PID).
@@ -180,5 +187,5 @@ export function getSessionId(hostSessionId) {
 // --- MCP protocol ---
 
 export const SERVER_NAME = 'nudge-mcp';
-export const SERVER_VERSION = '1.3.0';
+export const SERVER_VERSION = '1.4.0';
 export const PROTOCOL_VERSION = '2024-11-05';
