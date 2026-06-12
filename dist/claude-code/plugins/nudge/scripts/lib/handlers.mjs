@@ -23,7 +23,7 @@ import {
   getSessionId,
 } from './constants.mjs';
 import { readConfig, getApiUrl, updateConfigKey, getOrCreateInstallId } from './config.mjs';
-import { getValidToken } from './token-utils.mjs';
+import { getValidToken, refreshToken } from './token-utils.mjs';
 import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
 import { encryptSensitiveFields as encryptSensitiveFieldsShared } from './hook-runtime.mjs';
@@ -175,7 +175,13 @@ async function trackAndAwait({
   });
 
   try {
-    const decision = await waitForDecision(createResp.rtdbStreamUrl, token, { timeoutMs: ttlMs });
+    const decision = await waitForDecision(createResp.rtdbStreamUrl, token, {
+      timeoutMs: ttlMs,
+      // Firebase ID tokens last 1h; long --ttl waits outlive them. Mint a
+      // fresh token on SSE auth failures so reconnects don't replay an
+      // expired one (returns null on failure → sse keeps the current token).
+      getFreshToken: () => refreshToken(readConfig()),
+    });
     if (decision.action === 'timeout') {
       // Layer 1 cleanup: the backend doesn't (yet) auto-cancel on TTL, so we
       // best-effort tell it now. Idempotent with any future backend-side TTL.
