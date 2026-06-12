@@ -5,6 +5,12 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Skill Hand — installed skills ride along on asks** — `nudge ask` and the MCP `nudge_ask_user` tool now scan the standard Claude Code skill locations (project `.claude/skills/`, `~/.claude/skills/`, plugin cache) and embed up to 24 `{ name, description, origin }` cards in the elicitation event's encrypted payload (`availableSkills`). The mobile app renders them as a reply hand: playing a card answers the question with `/skill-name [args]` through the existing freeText path — no new phone-to-computer channel. Set `NUDGE_DISABLE_SKILLS` to opt out. New `lib/skills.mjs` (built-ins only).
+
 ## [1.4.0] - 2026-06-08
 
 Adds the CLI half of **paired computers** (M4): each machine registers itself with the phone so the mobile app can list which computers are paired and revoke any one of them. Fully backwards compatible — older plugins keep working (they simply don't appear in the list until upgraded).

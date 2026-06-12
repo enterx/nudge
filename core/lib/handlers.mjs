@@ -28,6 +28,7 @@ import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
 import { encryptSensitiveFields as encryptSensitiveFieldsShared } from './hook-runtime.mjs';
 import { writePending, clearPending } from './pending-files.mjs';
+import { collectAvailableSkills } from './skills.mjs';
 
 const MAX_STRING_LENGTH = 4000;
 
@@ -237,12 +238,17 @@ export async function runAskUser(args, hooks = {}) {
 
   const { token, apiUrl } = await getAuthContext();
 
+  // Skill Hand: embed installed skills so the phone can offer them as
+  // one-tap replies (the answer comes back as freeText '/skill-name args').
+  const availableSkills = collectAvailableSkills();
+
   const sensitiveFields = {
     toolInput: { question, options, multiSelect, ...(textOnly && { textOnly }), ...(actions.length > 0 && { actions }) },
     description: question,
     ...(context && { context }),
     ...(structured && { structured }),
     ...(attachments.length > 0 && { attachments }),
+    ...(availableSkills.length > 0 && { availableSkills }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
