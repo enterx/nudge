@@ -160,6 +160,17 @@ async function trackAndAwait({
 }) {
   const eventId = createResp.eventId;
 
+  // Long waits (--ttl) and late SIGINT/TTL cancels can outlive the Firebase
+  // ID token captured at event creation, so every authenticated call after
+  // the create re-validates (and refreshes) it.
+  const freshToken = async () => {
+    try {
+      return (await getValidToken(readConfig())) || token;
+    } catch {
+      return token;
+    }
+  };
+
   writePending(sessionId, eventId, {
     apiUrl, token, pattern, toolName, toolInput, sessionName,
   });
@@ -168,20 +179,23 @@ async function trackAndAwait({
     eventId,
     apiUrl,
     token,
-    cancel: () => {
+    cancel: async () => {
       clearPending(sessionId, eventId);
-      return cancelEventOnBackend(apiUrl, eventId, token);
+      return cancelEventOnBackend(apiUrl, eventId, await freshToken());
     },
   });
 
   try {
-    const decision = await waitForDecision(createResp.rtdbStreamUrl, token, { timeoutMs: ttlMs });
+    const decision = await waitForDecision(createResp.rtdbStreamUrl, token, {
+      timeoutMs: ttlMs,
+      getToken: freshToken,
+    });
     if (decision.action === 'timeout') {
       // Layer 1 cleanup: the backend doesn't (yet) auto-cancel on TTL, so we
       // best-effort tell it now. Idempotent with any future backend-side TTL.
       // Tight budget (1.5s) so `--ttl N` doesn't routinely stretch to N+5 in
       // total wall time — this is fire-and-forget reliability, not a guarantee.
-      await cancelEventOnBackend(apiUrl, eventId, token, 'TTL elapsed', { timeoutMs: 1_500 });
+      await cancelEventOnBackend(apiUrl, eventId, await freshToken(), 'TTL elapsed', { timeoutMs: 1_500 });
     }
     return decision;
   } finally {
