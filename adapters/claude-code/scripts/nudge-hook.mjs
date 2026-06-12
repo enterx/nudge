@@ -342,10 +342,20 @@ async function main() {
   // Ensure stdin is resumed so 'close'/'end' events can fire.
   process.stdin.resume();
 
-  // Wait for decision via RTDB SSE streaming
+  // Wait for decision via RTDB SSE streaming. Permission prompts can sit
+  // unanswered past the ID token's ~1h lifetime, so each reconnect re-validates
+  // the token instead of replaying the one captured above.
   let decision;
   try {
-    decision = await waitForDecision(rtdbStreamUrl, token);
+    decision = await waitForDecision(rtdbStreamUrl, token, {
+      getToken: async () => {
+        try {
+          return (await getValidToken(readConfig())) || token;
+        } catch {
+          return token;
+        }
+      },
+    });
   } catch {
     cancelAndExit('sse-error');
     return;
