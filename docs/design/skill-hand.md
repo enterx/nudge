@@ -12,27 +12,26 @@ phone as a "hand of cards", so the user can deal the next move from mobile.
 There is no unsolicited phone→CLI path. The CLI only receives input while an
 `ask` event is open (SSE). Everything below works within or around that.
 
-## Step 1 — `nudge ask --hand` (no backend change)
+## Step 1 — embedded `availableSkills` (implemented: `feat/ask-available-skills`, d1bd5fb)
 
-`--action` already exists in the event payload (`core/lib/handlers.mjs`), so the
-hand can ship as a CLI-only patch:
+Implemented while this doc was being drafted — and with a better shape than
+the `--hand`/`--action` mapping this doc originally proposed:
 
-1. **Discovery**: scan, in order, `.claude/skills/*/SKILL.md` (project),
-   `~/.claude/skills/*/SKILL.md` (user), and installed plugin skill dirs.
-   Parse frontmatter `name` + `description` (first sentence only).
-2. **Mapping**: each skill becomes an action `{ value: "skill:<name>", label: "<name> — <desc>" }`.
-   Cap the hand (e.g. 8 cards); `--hand <glob>` filters, `--hand` alone takes
-   the most recently used.
-3. **Flow**: `nudge ask "次の一手は?" --hand --text` → phone shows cards +
-   free-text. Answer comes back as `selectedAction: "skill:<name>"`; the host
-   loop (nudge-afk) invokes the skill and re-opens the hand on the next pause.
+- `core/lib/skills.mjs` scans `.claude/skills/` (project),
+  `~/.claude/skills/` (global), and the plugin cache; dedupes with
+  project > global > plugin precedence; caps at 24 cards; 60 s scan cache;
+  `NUDGE_DISABLE_SKILLS` opt-out.
+- Every `nudge ask` / `nudge_ask_user` embeds the cards as
+  `availableSkills` **inside the encrypted payload** — no plaintext
+  exposure, unlike the `actions` route first considered here.
+- Mobile renders them as a reply hand; playing a card answers
+  `/skill-name [args]` through the existing freeText path — no new
+  phone→computer channel needed.
 
-Notes:
-- Skill names/descriptions travel in `actions`, which today is **plaintext** in
-  `eventsCreate` — acceptable for skill names, but see the privacy note in
-  `session-view-analytics.md`.
-- The nudge-afk SKILL.md should document the `--hand` loop as the canonical
-  AFK pattern.
+Follow-ups once that branch merges:
+- nudge-afk SKILL.md should document the hand as the canonical AFK loop
+  (open `ask --text`, play a card, repeat).
+- Mobile UX: recently-played cards first; collapse beyond ~8.
 
 ## Step 2 — persistent hand (backend + mobile)
 
