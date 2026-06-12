@@ -158,6 +158,7 @@ export class MockServer {
     this.requests.push({
       method: req.method,
       path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
       headers: { ...req.headers },
       body,
     });

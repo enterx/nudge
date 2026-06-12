@@ -20,6 +20,11 @@ import { SSE_MAX_TIME_MS, SSE_MAX_RECONNECTS } from './constants.mjs';
  * @param {number} [options.timeoutMs] - Overall TTL across reconnects. When set
  *   and elapsed, returns a synthetic `{ action: 'timeout', reason: 'ttl elapsed' }`
  *   decision instead of throwing. Callers can branch on `decision.action`.
+ * @param {() => Promise<string|null>} [options.getToken] - Called before each
+ *   connection attempt for a fresh auth token. Long waits (--ttl) can outlive
+ *   the Firebase ID token (~1h), so reconnecting with the token captured at
+ *   event-creation time eventually 401s on every attempt. Falls back to
+ *   `token` when it returns a falsy value or throws.
  * @returns {Promise<object>} Raw response payload (e.g. { action, reason, ... })
  */
 export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
@@ -27,7 +32,7 @@ export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
     throw new Error('No RTDB stream URL returned from server');
   }
 
-  const { timeoutMs } = options;
+  const { timeoutMs, getToken } = options;
   const ttlDeadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : null;
   const ttlExpired = () => ttlDeadline !== null && Date.now() >= ttlDeadline;
 
@@ -45,9 +50,18 @@ export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
       : SSE_MAX_TIME_MS;
     const timeout = setTimeout(() => controller.abort(), attemptMs);
 
+    let authToken = token;
+    if (getToken) {
+      try {
+        authToken = (await getToken()) || token;
+      } catch {
+        // Refresh failed (network, etc.) — try with the last-known token.
+      }
+    }
+
     try {
       const separator = rtdbStreamUrl.includes('?') ? '&' : '?';
-      const url = `${rtdbStreamUrl}${separator}auth=${encodeURIComponent(token)}`;
+      const url = `${rtdbStreamUrl}${separator}auth=${encodeURIComponent(authToken)}`;
 
       const resp = await fetch(url, {
         headers: { Accept: 'text/event-stream' },

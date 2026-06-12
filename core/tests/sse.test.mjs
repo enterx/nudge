@@ -215,6 +215,75 @@ describe('waitForDecision', () => {
     assert.ok(elapsed < 1000, `timeout took too long: ${elapsed}ms`);
   });
 
+  it('uses the getToken result as the auth parameter', async () => {
+    server.configure({
+      sseMessages: [
+        { path: '/', data: { action: 'approved' } },
+      ],
+      sseCloseAfterSend: true,
+    });
+
+    const { waitForDecision } = await import('../lib/sse.mjs');
+    const result = await waitForDecision(server.sseUrl, 'stale-token', {
+      getToken: async () => 'fresh-token',
+    });
+
+    assert.equal(result.action, 'approved');
+    const sseReq = server.requests.find((r) => r.path.startsWith('/sse/'));
+    assert.equal(sseReq.query.auth, 'fresh-token');
+  });
+
+  it('calls getToken again before each reconnect', async () => {
+    // Each connection sends only a null put and closes, forcing a reconnect.
+    server.configure({
+      sseMessages: [{ path: '/', data: null }],
+      sseDelayMs: 0,
+      sseCloseAfterSend: true,
+    });
+
+    const { waitForDecision } = await import('../lib/sse.mjs');
+
+    const issued = [];
+    const result = await waitForDecision(server.sseUrl, 'stale-token', {
+      getToken: async () => {
+        const tok = `token-${issued.length + 1}`;
+        issued.push(tok);
+        if (issued.length === 2) {
+          // Second connection gets the real decision.
+          server.configure({
+            sseMessages: [{ path: '/', data: { action: 'approved' } }],
+            sseCloseAfterSend: true,
+          });
+        }
+        return tok;
+      },
+    });
+
+    assert.equal(result.action, 'approved');
+    assert.ok(issued.length >= 2, `expected >=2 getToken calls, got ${issued.length}`);
+    const sseReqs = server.requests.filter((r) => r.path.startsWith('/sse/'));
+    assert.equal(sseReqs[0].query.auth, 'token-1');
+    assert.equal(sseReqs[1].query.auth, 'token-2');
+  });
+
+  it('falls back to the static token when getToken throws', async () => {
+    server.configure({
+      sseMessages: [
+        { path: '/', data: { action: 'approved' } },
+      ],
+      sseCloseAfterSend: true,
+    });
+
+    const { waitForDecision } = await import('../lib/sse.mjs');
+    const result = await waitForDecision(server.sseUrl, 'static-token', {
+      getToken: async () => { throw new Error('refresh down'); },
+    });
+
+    assert.equal(result.action, 'approved');
+    const sseReq = server.requests.find((r) => r.path.startsWith('/sse/'));
+    assert.equal(sseReq.query.auth, 'static-token');
+  });
+
   it('throws after max reconnect attempts on repeated HTTP errors', async () => {
     const errorServer = new MockServer({
       eventsCreateStatus: 500,
