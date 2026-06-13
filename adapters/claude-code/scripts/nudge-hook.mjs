@@ -26,6 +26,7 @@ import {
   postCancel,
 } from './lib/pending-files.mjs';
 import { buildEventPayload } from './lib/hook-runtime.mjs';
+import { collectAvailableSkills } from './lib/skills.mjs';
 
 // --- Description builders ---
 
@@ -220,10 +221,15 @@ async function main() {
     }));
   }
 
+  // Skill Hand: both hook patterns offer skills — elicitation answers and
+  // approval responses compose a mounted '/skill args' on the mobile side.
+  const availableSkills = collectAvailableSkills({ cwd: cwd || process.cwd() });
+
   const sensitiveFields = {
     toolInput: isAskUser ? {} : sanitizedInput,
     description: isAskUser ? askUserQuestion || description : description,
     ...(cwd && { cwd }),
+    ...(availableSkills.length > 0 && { availableSkills }),
   };
 
   const payload = buildEventPayload({

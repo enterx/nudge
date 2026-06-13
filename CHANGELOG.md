@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Skill Hand — installed skills ride along on asks** — `nudge ask` and the MCP `nudge_ask_user` tool now scan the standard Claude Code skill locations (project `.claude/skills/`, `~/.claude/skills/`, plugin cache) and embed up to 24 `{ name, description, origin }` cards in the elicitation event's encrypted payload (`availableSkills`). The mobile app renders them as a reply hand: playing a card answers the question with `/skill-name [args]` through the existing freeText path — no new phone-to-computer channel. Set `NUDGE_DISABLE_SKILLS` to opt out. New `lib/skills.mjs` (built-ins only).
+- **Skill Hand — installed skills ride along on asks and approvals** — `nudge ask` / `nudge approve`, the MCP `nudge_ask_user` / `nudge_approve` tools, and the PermissionRequest hook now scan the standard Claude Code skill locations (project `.claude/skills/`, `~/.claude/skills/`, plugin cache) and embed up to 24 `{ name, description, origin }` cards in the event's encrypted payload (`availableSkills`). The mobile app renders them as a hand of cards: mounting one on a card composes `/skill-name [args]` into the response through the existing freeText/reason path — no new phone-to-computer channel. Elicitation answers carry it as the reply; approval responses read as "approve, then do this" / "deny, do this instead". Set `NUDGE_DISABLE_SKILLS` to opt out. New `lib/skills.mjs` (built-ins only).
 
 ## [1.4.0] - 2026-06-08
 
