@@ -55,6 +55,10 @@ echo "--- sse.test.mjs ---"
 node tests/sse.test.mjs
 
 echo ""
+echo "--- skills.test.mjs ---"
+node tests/skills.test.mjs
+
+echo ""
 echo "=== MCP server tests ==="
 echo ""
 node tests/nudge-mcp-server.test.mjs
