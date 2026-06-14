@@ -506,6 +506,13 @@ async function cmdAsk(args) {
   if (lines.length === 0) lines.push('(no selection)');
 
   printResult(result, lines);
+
+  // Force exit on the success path. Like `approve`, `ask` waits on an SSE
+  // stream and undici keeps the underlying fetch sockets alive in its
+  // keep-alive pool, so the event loop never drains on its own — without this
+  // the process hangs after the answer is printed (bg `ask` never completes,
+  // so the caller sees "no answer received" even though it arrived).
+  process.exit(0);
 }
 
 async function cmdApprove(args) {
