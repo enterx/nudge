@@ -106,12 +106,12 @@ describe('collectAvailableSkills', () => {
     for (let i = 0; i < 30; i++) {
       writeSkill(
         cwd, '.claude', 'skills', `skill-${String(i).padStart(2, '0')}`,
-        `---\nname: skill-${i}\ndescription: ${'x'.repeat(300)}\n---\n`,
+        `---\nname: skill-${i}\ndescription: ${'x'.repeat(400)}\n---\n`,
       );
     }
     const skills = collectAvailableSkills({ cwd, home, env: {} });
     assert.equal(skills.length, 24);
-    assert.equal(skills[0].description.length, 120);
+    assert.equal(skills[0].description.length, 300);
   });
 
   it('returns [] when NUDGE_DISABLE_SKILLS is set', () => {
