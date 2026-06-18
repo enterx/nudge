@@ -28,6 +28,7 @@ import { apiPost, apiGet } from './api.mjs';
 import { waitForDecision } from './sse.mjs';
 import { encryptSensitiveFields as encryptSensitiveFieldsShared } from './hook-runtime.mjs';
 import { writePending, clearPending } from './pending-files.mjs';
+import { collectAvailableSkills } from './skills.mjs';
 
 const MAX_STRING_LENGTH = 4000;
 
@@ -243,12 +244,17 @@ export async function runAskUser(args, hooks = {}) {
 
   const { token, apiUrl } = await getAuthContext();
 
+  // Skill Hand: embed installed skills so the phone can offer them as
+  // one-tap replies (the answer comes back as freeText '/skill-name args').
+  const availableSkills = collectAvailableSkills();
+
   const sensitiveFields = {
     toolInput: { question, options, multiSelect, ...(textOnly && { textOnly }), ...(actions.length > 0 && { actions }) },
     description: question,
     ...(context && { context }),
     ...(structured && { structured }),
     ...(attachments.length > 0 && { attachments }),
+    ...(availableSkills.length > 0 && { availableSkills }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 
@@ -351,6 +357,11 @@ export async function runApprove(args, hooks = {}) {
   const { token, apiUrl } = await getAuthContext();
   const approvalLabel = toolName === 'nudge_approve' ? 'Approval' : toolName;
 
+  // Skill Hand: approval cards offer skills too — mounting one composes
+  // '/skill args' into the approve/deny reason (approve = "then do this",
+  // deny = "do this instead").
+  const availableSkills = collectAvailableSkills();
+
   const sensitiveFields = {
     toolInput: {
       ...(argToolInput || { description }),
@@ -361,6 +372,7 @@ export async function runApprove(args, hooks = {}) {
     ...(cwd && { cwd }),
     ...(structured && { structured }),
     ...(attachments.length > 0 && { attachments }),
+    ...(availableSkills.length > 0 && { availableSkills }),
   };
   const encrypted = encryptSensitiveFields(sensitiveFields);
 

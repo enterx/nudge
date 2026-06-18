@@ -40,6 +40,7 @@ export function encryptSensitiveFields(config, fields) {
     ...(fields.sessionName && { sessionName: fields.sessionName }),
     ...(fields.structured && { structured: fields.structured }),
     ...(fields.attachments && fields.attachments.length > 0 && { attachments: fields.attachments }),
+    ...(fields.availableSkills && fields.availableSkills.length > 0 && { availableSkills: fields.availableSkills }),
   });
 
   const notif = encryptFields(key, {
