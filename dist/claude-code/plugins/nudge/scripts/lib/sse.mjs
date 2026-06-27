@@ -20,6 +20,11 @@ import { SSE_MAX_TIME_MS, SSE_MAX_RECONNECTS } from './constants.mjs';
  * @param {number} [options.timeoutMs] - Overall TTL across reconnects. When set
  *   and elapsed, returns a synthetic `{ action: 'timeout', reason: 'ttl elapsed' }`
  *   decision instead of throwing. Callers can branch on `decision.action`.
+ * @param {() => Promise<string|null>} [options.getFreshToken] - Called after an
+ *   auth-shaped failure (HTTP 401/403). Firebase ID tokens expire after 1h, so
+ *   long waits (--ttl 3600) outlive the token captured at connect time; without
+ *   a refresh every reconnect replays the same expired token until the retry
+ *   budget is gone. A null/throwing provider keeps the current token.
  * @returns {Promise<object>} Raw response payload (e.g. { action, reason, ... })
  */
 export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
@@ -27,7 +32,8 @@ export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
     throw new Error('No RTDB stream URL returned from server');
   }
 
-  const { timeoutMs } = options;
+  const { timeoutMs, getFreshToken } = options;
+  let currentToken = token;
   const ttlDeadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : null;
   const ttlExpired = () => ttlDeadline !== null && Date.now() >= ttlDeadline;
 
@@ -47,7 +53,7 @@ export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
 
     try {
       const separator = rtdbStreamUrl.includes('?') ? '&' : '?';
-      const url = `${rtdbStreamUrl}${separator}auth=${encodeURIComponent(token)}`;
+      const url = `${rtdbStreamUrl}${separator}auth=${encodeURIComponent(currentToken)}`;
 
       const resp = await fetch(url, {
         headers: { Accept: 'text/event-stream' },
@@ -119,6 +125,14 @@ export async function waitForDecision(rtdbStreamUrl, token, options = {}) {
           throw new Error(
             `SSE connection failed after ${SSE_MAX_RECONNECTS} attempts: ${safeMsg}`,
           );
+        }
+        // Auth failure: the token likely aged out mid-wait — refresh it
+        // before the next attempt instead of replaying the expired one.
+        if (getFreshToken && /HTTP 40[13]\b/.test(err.message)) {
+          try {
+            const fresh = await getFreshToken();
+            if (fresh) currentToken = fresh;
+          } catch { /* keep current token */ }
         }
         // Linear backoff
         await new Promise((r) => setTimeout(r, 1000 * consecutiveFailures));

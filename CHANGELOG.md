@@ -5,11 +5,17 @@ All notable changes to Nudge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-06-27
+
+Adds **Skill Hand**: your installed Claude Code skills ride along on every ask and approval so the phone can run one straight back. Fully backwards compatible (older phones ignore the extra payload, and the whole feature is opt-out via `NUDGE_DISABLE_SKILLS`). Also hardens long waits against mid-wait token expiry.
 
 ### Added
 
 - **Skill Hand — installed skills ride along on asks and approvals** — `nudge ask` / `nudge approve`, the MCP `nudge_ask_user` / `nudge_approve` tools, and the PermissionRequest hook now scan the standard Claude Code skill locations (project `.claude/skills/`, `~/.claude/skills/`, plugin cache) and embed up to 24 `{ name, description, origin }` cards in the event's encrypted payload (`availableSkills`). The mobile app renders them as a hand of cards: mounting one on a card composes `/skill-name [args]` into the response through the existing freeText/reason path — no new phone-to-computer channel. Elicitation answers carry it as the reply; approval responses read as "approve, then do this" / "deny, do this instead". Set `NUDGE_DISABLE_SKILLS` to opt out. New `lib/skills.mjs` (built-ins only).
+
+### Fixed
+
+- **Auth token refresh across SSE reconnects** — a long `ask` / `approve` wait no longer dies when the Firebase ID token expires mid-wait. On a `401` / `403` the client now refreshes the token and reconnects with fresh credentials instead of replaying the expired one until the retry budget runs out.
 
 ## [1.4.0] - 2026-06-08
 
