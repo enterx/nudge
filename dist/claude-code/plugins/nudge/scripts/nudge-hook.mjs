@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { PROVIDER, SERVER_VERSION, SESSION_ID_PATH, SESSION_NAME_PATH, getSessionId } from './lib/constants.mjs';
 import { readConfig, getApiUrl, getOrCreateInstallId } from './lib/config.mjs';
-import { getValidToken } from './lib/token-utils.mjs';
+import { getValidToken, refreshToken } from './lib/token-utils.mjs';
 import { apiPost } from './lib/api.mjs';
 import { waitForDecision } from './lib/sse.mjs';
 import { extractSessionName } from './lib/transcript.mjs';
@@ -351,7 +351,12 @@ async function main() {
   // Wait for decision via RTDB SSE streaming
   let decision;
   try {
-    decision = await waitForDecision(rtdbStreamUrl, token);
+    decision = await waitForDecision(rtdbStreamUrl, token, {
+      // Permission prompts can sit unanswered past the 1h Firebase token
+      // lifetime — refresh on SSE auth failures instead of replaying the
+      // expired token until the retry budget is gone.
+      getFreshToken: () => refreshToken(readConfig()),
+    });
   } catch {
     cancelAndExit('sse-error');
     return;

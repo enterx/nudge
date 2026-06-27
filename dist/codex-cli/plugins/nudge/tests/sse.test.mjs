@@ -215,6 +215,79 @@ describe('waitForDecision', () => {
     assert.ok(elapsed < 1000, `timeout took too long: ${elapsed}ms`);
   });
 
+  it('refreshes the token via getFreshToken after an HTTP 401', async () => {
+    const { createServer } = await import('node:http');
+
+    // First connect (expired token) → 401; second connect → SSE decision.
+    const seenAuths = [];
+    const authServer = createServer((req, res) => {
+      const auth = new URL(req.url, 'http://x').searchParams.get('auth');
+      seenAuths.push(auth);
+      if (auth !== 'fresh-token') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end('Auth token is expired');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: put\n');
+      res.write(`data: ${JSON.stringify({ path: '/', data: { action: 'approved' } })}\n\n`);
+    });
+    await new Promise((r) => authServer.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${authServer.address().port}/sse/stream.json`;
+
+    try {
+      const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+
+      let refreshCalls = 0;
+      const result = await waitForDecision(url, 'expired-token', {
+        getFreshToken: async () => {
+          refreshCalls++;
+          return 'fresh-token';
+        },
+      });
+
+      assert.equal(result.action, 'approved');
+      assert.equal(refreshCalls, 1);
+      assert.deepEqual(seenAuths, ['expired-token', 'fresh-token']);
+    } finally {
+      authServer.close();
+    }
+  });
+
+  it('keeps the current token when getFreshToken returns null', async () => {
+    const { createServer } = await import('node:http');
+
+    // 401 once, then accept the original token — proves a failed refresh
+    // doesn't clobber the token and the retry loop still proceeds.
+    let connects = 0;
+    const flakyServer = createServer((req, res) => {
+      connects++;
+      if (connects === 1) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end('Auth token is expired');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: put\n');
+      res.write(`data: ${JSON.stringify({ path: '/', data: { action: 'denied' } })}\n\n`);
+    });
+    await new Promise((r) => flakyServer.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${flakyServer.address().port}/sse/stream.json`;
+
+    try {
+      const { waitForDecision } = await import('../scripts/lib/sse.mjs');
+
+      const result = await waitForDecision(url, 'orig-token', {
+        getFreshToken: async () => null,
+      });
+
+      assert.equal(result.action, 'denied');
+      assert.equal(connects, 2);
+    } finally {
+      flakyServer.close();
+    }
+  });
+
   it('throws after max reconnect attempts on repeated HTTP errors', async () => {
     const errorServer = new MockServer({
       eventsCreateStatus: 500,
