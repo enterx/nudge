@@ -1,5 +1,8 @@
 # Nudge
 
+> [!IMPORTANT]
+> **Nudge has been discontinued (2026-10-05).** The iOS app has been removed from the App Store and the backend service has been shut down, so the CLI and plugin no longer work. This repository is archived and kept for reference only.
+
 Approve coding AI actions from your phone -- with end-to-end encryption.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
